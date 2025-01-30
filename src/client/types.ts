@@ -1,5 +1,7 @@
+import { CreateApiHealthMonitorData } from "../apiHealthMonitor/types";
 import { AxiosResponse, CreateAxiosDefaults } from "axios";
 import { AuthCreateData } from "../authenticator/types";
+import ApiHealthMonitor from "../apiHealthMonitor";
 import { RequestOptions } from "../request/types";
 import { Logger } from "winston";
 import IORedis from "ioredis";
@@ -21,6 +23,7 @@ export interface ClientConstructorData {
   redisListener: IORedis;
   requestHandlerRedisName: string;
   logger: Logger;
+  apiHealthMonitor?: ApiHealthMonitor;
   key: string;
 }
 
@@ -43,6 +46,8 @@ export interface CreateClientData {
   sharedRateLimitClientName?: string;
   /** Options to pass to each request */
   requestOptions?: RequestOptions;
+  /** Optional data to create an API Health Checker with */
+  apiHealthMonitorData?: CreateApiHealthMonitorData;
   /** Optional object for storing other data with the updater */
   metadata?: { [key: string]: any };
   /**

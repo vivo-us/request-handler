@@ -1,6 +1,7 @@
 import axios, { AxiosError, AxiosInstance, AxiosResponse } from "axios";
 import { RequestConfig, RequestOptions } from "../request/types";
 import { ClientRole, RequestMetadata } from "./types";
+import ApiHealthMonitor from "../apiHealthMonitor";
 import { Authenticator } from "../authenticator";
 import EventEmitter from "events";
 import { Logger } from "winston";
@@ -27,6 +28,7 @@ export default class Client {
   private redisName: string;
   private http: AxiosInstance;
   private interval?: NodeJS.Timeout;
+  private apiHealthMonitor?: ApiHealthMonitor;
   private rateLimitChange?: RateLimitChange;
   private pendingRequests: RequestMetadata[] = [];
   private tokens: number = 0;
@@ -35,7 +37,7 @@ export default class Client {
   private emitter: NodeJS.EventEmitter = new EventEmitter();
 
   constructor(data: ClientConstructorData) {
-    const { client, redis, logger, key } = data;
+    const { client, redis, logger, key, apiHealthMonitor } = data;
     this.http = axios.create(client.axiosOptions);
     this.logger = logger;
     this.redis = redis;
@@ -52,6 +54,7 @@ export default class Client {
       this.tokens = this.rateLimit.maxTokens;
     }
     this.metadata = client.metadata;
+    this.apiHealthMonitor = apiHealthMonitor;
     this.requestOptions = client.requestOptions;
     this.rateLimitChange = client.rateLimitChange;
     if (!client.authentication) return;
@@ -273,14 +276,15 @@ export default class Client {
    */
 
   public async sendRequest(config: RequestConfig) {
+    const startTime = new Date();
     let response;
     try {
       response = await this.http.request(config);
     } catch (error: any) {
-      await this.handleResponse(error);
+      await this.handleResponse(startTime, config, error);
       throw error;
     }
-    await this.handleResponse(response);
+    await this.handleResponse(startTime, config, response);
     return response;
   }
 
@@ -288,8 +292,15 @@ export default class Client {
    * This method adds back concurrency tokens, logs the request and response, and updates the rate limit if necessary.
    */
 
-  private async handleResponse(res: AxiosResponse | AxiosError | any) {
+  private async handleResponse(
+    startTime: Date,
+    config: RequestConfig,
+    res: AxiosResponse | AxiosError | any
+  ) {
     await this.redis.publish(`${this.redisName}:requestDone`, "");
+    if (this.apiHealthMonitor) {
+      await this.apiHealthMonitor.logRequest(config, res, startTime);
+    }
     if (this.isResponse(res) && this.rateLimitChange) {
       const newLimit = await this.rateLimitChange(this.rateLimit, res);
       if (newLimit) await this.updateRateLimit(newLimit);
@@ -370,6 +381,7 @@ export default class Client {
     if (role === this.role) return;
     this.role = role;
     if (this.interval) clearInterval(this.interval);
+    if (this.apiHealthMonitor) await this.apiHealthMonitor.updateRole(role);
     if (this.role === "slave" || this.rateLimit.type === "noLimit") return;
     this.addInterval();
     await this.checkExistingRequests();
