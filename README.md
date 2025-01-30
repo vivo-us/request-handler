@@ -30,7 +30,7 @@ Request Handler is a multi-node capable external API management package that sim
 ## Installation
 
 ```bash
-npm install request-handler
+npm install @vivo-technology/request-handler
 ```
 
 ## Usage
