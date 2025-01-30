@@ -1,4 +1,5 @@
 import { ClientGenerator, CreateClientData } from "./client/types";
+import ApiHealthMonitor from "./apiHealthMonitor";
 import { RequestConfig } from "./request/types";
 import { AxiosResponse } from "axios";
 import BaseError from "./baseError";
@@ -7,6 +8,10 @@ import Client from "./client";
 import IORedis from "ioredis";
 import logger from "./logger";
 import { v4 } from "uuid";
+import {
+  ApiHealthMonitorGetMetricsOptions,
+  ApiHealthMonitorMetrics,
+} from "./apiHealthMonitor/types";
 import {
   RequestHandlerNode,
   RequestHandlerConstructorOptions,
@@ -25,6 +30,7 @@ export default class RequestHandler {
   private ownedClients: Map<string, Client> = new Map();
   private defaultClient: CreateClientData;
   private clientGenerators: Record<string, ClientGenerator>;
+  private apiHealthMonitors = new Map<string, ApiHealthMonitor>();
 
   private keepNodeAliveInterval?: NodeJS.Timeout;
   private roleCheckIntervalMs: number;
@@ -121,6 +127,39 @@ export default class RequestHandler {
   }
 
   /**
+   * This method returns the metrics for the health monitor with the given name.
+   *
+   * @param name The name of the health monitor to get metrics for
+   * @param data The options to use when getting the metrics
+   * @returns
+   */
+
+  public async getHealthMonitorMetrics(
+    name: string,
+    data: ApiHealthMonitorGetMetricsOptions
+  ): Promise<ApiHealthMonitorMetrics[] | undefined> {
+    const monitor = this.apiHealthMonitors.get(name);
+    if (monitor) return await monitor.getMetrics(data);
+  }
+
+  /**
+   * This method returns the metrics for all health monitors.
+   *
+   * @param data The options to use when getting the metrics
+   * @returns
+   */
+
+  public async getAllHealthMonitorMetrics(
+    data: ApiHealthMonitorGetMetricsOptions
+  ): Promise<Record<string, ApiHealthMonitorMetrics[]>> {
+    const metrics: Record<string, ApiHealthMonitorMetrics[]> = {};
+    for (const [name, monitor] of this.apiHealthMonitors) {
+      metrics[name] = await monitor.getMetrics(data);
+    }
+    return metrics;
+  }
+
+  /**
    * This method sends a message to all nodes to regenerate clients. This method is mostly used after a new OAuth client is created.
    *
    * @param generatorNames Optional names of generators to regenerate clients for
@@ -210,7 +249,17 @@ export default class RequestHandler {
       }
       if (parent) client = this.mergeChildParentClients(client, parent);
       await this.resetClient(client.name);
-      await this.createClient(client);
+      if (client.apiHealthMonitorData) {
+        const existing = this.apiHealthMonitors.get(client.name);
+        if (!existing) {
+          const monitor = new ApiHealthMonitor({
+            ...client.apiHealthMonitorData,
+            redis: this.redis,
+          });
+          this.apiHealthMonitors.set(monitor.name, monitor);
+          await this.createClient(client, monitor);
+        } else await this.createClient(client, existing);
+      } else await this.createClient(client);
       if (client.subClients) {
         await this.generateClients(client.subClients, client);
       }
@@ -278,7 +327,10 @@ export default class RequestHandler {
    *
    * @param data The data to use to create the client
    */
-  private async createClient(data: CreateClientData) {
+  private async createClient(
+    data: CreateClientData,
+    monitor?: ApiHealthMonitor
+  ) {
     const existing = this.getClientIfExists(data.name);
     if (existing) {
       throw new BaseError(`Client with name ${data.name} already exists.`);
@@ -289,6 +341,7 @@ export default class RequestHandler {
       redisListener: this.redisListener,
       requestHandlerRedisName: this.redisName,
       logger: logger,
+      apiHealthMonitor: monitor,
       key: this.key,
     });
     this.registeredClients.set(data.name, client);
