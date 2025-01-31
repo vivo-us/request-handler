@@ -1,12 +1,19 @@
 {
   "name": "@vivo-technology/request-handler",
-  "version": "0.1.2",
-  "type": "module",
+  "version": "0.1.3",
   "description": "An external API management tool that simplifies authentication and usage of external APIs",
-  "main": "src/index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vivo-us/request-handler.git"
+  },
+  "files": [
+    "dist/**/*"
+  ],
   "keywords": [
     "axios",
     "request",
