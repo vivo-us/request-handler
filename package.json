@@ -1,6 +1,7 @@
 {
   "name": "@vivo-technology/request-handler",
-  "version": "0.1.1",
+  "version": "0.1.2",
+  "type": "module",
   "description": "An external API management tool that simplifies authentication and usage of external APIs",
   "main": "src/index.ts",
   "scripts": {
