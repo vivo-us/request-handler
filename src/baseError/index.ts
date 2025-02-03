@@ -1,5 +1,5 @@
 import { BaseErrorMetaData } from "./types";
-import logger from "../logger";
+import { Logger } from "winston";
 import { v4 } from "uuid";
 
 export default class BaseError extends Error {
@@ -11,7 +11,7 @@ export default class BaseError extends Error {
    * @param metaData - Any additional data to log with the error
    */
 
-  constructor(message: string, metaData?: BaseErrorMetaData) {
+  constructor(logger: Logger, message: string, metaData?: BaseErrorMetaData) {
     const errorId = v4();
     super(message);
     this.metaData = metaData;
