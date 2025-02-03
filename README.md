@@ -116,6 +116,7 @@ const response = await requestHandler.handleRequest({
 - `defaultClinetOptions` *(optional)*: A [Client Options](#client-options) object to use for the `default` client. The `default` client starts with no rate limits and no authentication.
 - `roleCheckInterval` *(optional)*: The interval in milliseconds for each node to check what it role is. Defaults to 10 seconds (10000 ms).
 - `priority` *(optional)*: The priority of the node when deciding which node should handle rate limiting. Defaults to 0. Higher numbers are higher priority.
+- `logger` *(optional)*: A Winston logger instance to use for logging. If not provided, a default logger will be used which simply logs to the console. The custom logger is useful for adding additional logging endpoints, customized the log format, or doing custom logic based on the log messages.
 
 ### Request Config Options
 

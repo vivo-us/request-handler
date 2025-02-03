@@ -1,11 +1,12 @@
 import { ClientGenerator, CreateClientData } from "./client/types";
 import { RequestConfig } from "./request/types";
 import { AxiosResponse } from "axios";
+import defaultLogger from "./logger";
 import BaseError from "./baseError";
+import { Logger } from "winston";
 import Request from "./request";
 import Client from "./client";
 import IORedis from "ioredis";
-import logger from "./logger";
 import { v4 } from "uuid";
 import {
   RequestHandlerNode,
@@ -20,6 +21,7 @@ export default class RequestHandler {
   private redis: IORedis;
   private redisName: string;
   private redisListener: IORedis;
+  private logger: Logger;
 
   private registeredClients: Map<string, Client> = new Map();
   private ownedClients: Map<string, Client> = new Map();
@@ -54,6 +56,7 @@ export default class RequestHandler {
       name: "default",
     };
     this.roleCheckIntervalMs = data.roleCheckInterval || 10000;
+    this.logger = data.logger ? data.logger : defaultLogger;
   }
 
   /**
@@ -71,7 +74,7 @@ export default class RequestHandler {
       this.roleCheckIntervalMs
     );
     this.isInitialized = true;
-    logger.info(`Initialized request handler node with ID ${this.id}`);
+    this.logger.info(`Initialized request handler node with ID ${this.id}`);
   }
 
   /**
@@ -90,7 +93,7 @@ export default class RequestHandler {
     await this.redis.del(`${this.redisName}:node:${this.id}`);
     await this.redis.publish(`${this.redisName}:nodeUpdate`, "");
     clearInterval(this.keepNodeAliveInterval);
-    logger.warn(`Destroyed request handler node with ID ${this.id}`);
+    this.logger.warn(`Destroyed request handler node with ID ${this.id}`);
   }
 
   /**
@@ -116,7 +119,7 @@ export default class RequestHandler {
   public async handleRequest(config: RequestConfig): Promise<AxiosResponse> {
     if (!this.isInitialized) await this.waitUntilInitialized();
     const client = this.getClient(config.clientName);
-    const request = new Request(client, config, logger);
+    const request = new Request(client, config, this.logger);
     return await request.send();
   }
 
@@ -156,7 +159,10 @@ export default class RequestHandler {
   private getClient(clientName: string): Client {
     const client = this.getClientIfExists(clientName);
     if (client) return client;
-    throw new BaseError(`Client with name ${clientName} does not exist.`);
+    throw new BaseError(
+      this.logger,
+      `Client with name ${clientName} does not exist.`
+    );
   }
 
   /**
@@ -281,14 +287,17 @@ export default class RequestHandler {
   private async createClient(data: CreateClientData) {
     const existing = this.getClientIfExists(data.name);
     if (existing) {
-      throw new BaseError(`Client with name ${data.name} already exists.`);
+      throw new BaseError(
+        this.logger,
+        `Client with name ${data.name} already exists.`
+      );
     }
     const client = new Client({
       client: data,
       redis: this.redis,
       redisListener: this.redisListener,
       requestHandlerRedisName: this.redisName,
-      logger: logger,
+      logger: this.logger,
       key: this.key,
     });
     this.registeredClients.set(data.name, client);
@@ -438,7 +447,9 @@ export default class RequestHandler {
     for (const id of ids) {
       const data = await this.redis.get(`${this.redisName}:node:${id}`);
       if (!data) {
-        logger.warn(`Node with ID ${id} was not found in the Redis store.`);
+        this.logger.warn(
+          `Node with ID ${id} was not found in the Redis store.`
+        );
         await this.redis.srem(`${this.redisName}:nodes`, id);
         continue;
       }

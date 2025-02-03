@@ -87,21 +87,25 @@ export default class Request {
         response = await this.client.sendRequest(this.config);
       } catch (error: any) {
         if (this.retries === this.retryOptions.maxRetries) {
-          throw new BaseError("Maximum number of retries reached.", {
-            context: this.id,
-            error: {
-              message: error.message,
-              stack: error.stack,
-              code: error.code,
-              config: error.config,
-              response: {
-                status: error.response?.status,
-                statusText: error.response?.statusText,
-                headers: error.response?.headers,
-                data: error.response?.data,
+          throw new BaseError(
+            this.logger,
+            "Maximum number of retries reached.",
+            {
+              context: this.id,
+              error: {
+                message: error.message,
+                stack: error.stack,
+                code: error.code,
+                config: error.config,
+                response: {
+                  status: error.response?.status,
+                  statusText: error.response?.statusText,
+                  headers: error.response?.headers,
+                  data: error.response?.data,
+                },
               },
-            },
-          });
+            }
+          );
         }
         const shouldRetry = await this.handleError(error);
         if (shouldRetry) this.retries++;
@@ -109,7 +113,7 @@ export default class Request {
       }
     } while (!response && this.retries <= this.retryOptions.maxRetries);
     if (!response) {
-      throw new BaseError("No response received for the request.");
+      throw new BaseError(this.logger, "No response received for the request.");
     }
     if (this.responseInterceptor) {
       await this.responseInterceptor(this.config, response);

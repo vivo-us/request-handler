@@ -1,4 +1,5 @@
 import { ClientGenerator, CreateClientData } from "./client/types";
+import { Logger } from "winston";
 import IORedis from "ioredis";
 
 export interface RequestHandlerNodeStatus {
@@ -37,6 +38,8 @@ export interface RequestHandlerConstructorOptions {
    * The priority of the RequestHandler node (higher is better)
    */
   priority?: number;
+  /** A custom Winston Logger instance to use for logging */
+  logger?: Logger;
 }
 
 export interface RequestHandlerNode {
