@@ -70,7 +70,7 @@ export default class Request {
     );
     let response;
     do {
-      await this.client.waitForRequestReady(this.id, this.config.priority);
+      await this.client.waitForRequestReady(this.id, this.config);
       if (this.requestInterceptor) {
         this.config = await this.requestInterceptor(this.config);
       }

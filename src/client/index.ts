@@ -135,7 +135,7 @@ export default class Client {
   /**
    * This method works through the pending requests and processes them in order of priority and timestamp.
    *
-   * When a request is at the top of the queue and the client has a token available, the client will remove a token and publish the request to the Request's requestReady channel.
+   * When a request is at the top of the queue and the client has a token available, the client will remove the request cost and publish the request to the Request's requestReady channel.
    */
 
   private async processRequests() {
@@ -162,8 +162,8 @@ export default class Client {
         const request = this.pendingRequests.shift();
         if (!request) return;
         await this.waitForFreeze();
-        await this.waitForToken();
-        this.tokens--;
+        await this.waitForTokens(request.cost);
+        this.tokens -= request.cost || 1;
         await this.redis.publish(
           `${this.redisName}:requestReady`,
           request.requestId
@@ -199,17 +199,22 @@ export default class Client {
   }
 
   /**
-   * This method checks for a token in the client's bucket.
+   * This method checks for enough tokens in the client's bucket.
    *
-   * If the client has a token, the method will resolve immediately.
+   * If the client has enough tokens, the method will resolve immediately.
    *
-   * If the client does not have a token, the method will wait for a token to be added to the client's bucket.
+   * If the client does not have enough tokens, the method will wait for enough tokens to be added to the client's bucket.
    */
 
-  private waitForToken() {
-    if (this.tokens > 0) return Promise.resolve(true);
+  private waitForTokens(cost: number): Promise<boolean> {
+    if (this.tokens >= cost) return Promise.resolve(true);
     return new Promise((resolve) => {
-      this.emitter.once("tokensAdded", () => resolve(true));
+      const listener = () => {
+        if (this.tokens < cost) return;
+        resolve(true);
+        this.emitter.off("tokensAdded", listener);
+      };
+      this.emitter.on("tokensAdded", listener);
     });
   }
 
@@ -318,14 +323,14 @@ export default class Client {
 
   public async waitForRequestReady(
     requestId: string,
-    priority = 1
+    config: RequestConfig
   ): Promise<boolean> {
     return new Promise(async (resolve) => {
       if (this.rateLimit.type === "noLimit") {
         resolve(true);
         return;
       }
-      await this.addToQueue(requestId, priority);
+      await this.addToQueue(requestId, config);
       const interval = setInterval(async () => {
         await this.redis.expire(`${this.redisName}:queue:${requestId}`, 5);
       }, 2500);
@@ -337,19 +342,25 @@ export default class Client {
       });
       await this.redis.publish(
         `${this.redisName}:requestAdded`,
-        JSON.stringify({ priority, timestamp: Date.now(), requestId })
+        JSON.stringify({
+          priority: config.priority || 1,
+          cost: config.cost || 1,
+          timestamp: Date.now(),
+          requestId,
+        })
       );
     });
   }
 
   /**
-   * Adds the request to the queue and sets the priority and timestamp.
+   * Adds the request to the queue and sets the priority, cost, and timestamp.
    */
-  private async addToQueue(requestId: string, priority = 1) {
+  private async addToQueue(requestId: string, config: RequestConfig) {
     const writePipeline = this.redis.pipeline();
     writePipeline.sadd(`${this.redisName}:queue`, requestId);
     writePipeline.hset(`${this.redisName}:queue:${requestId}`, {
-      priority,
+      priority: config.priority || 1,
+      cost: config.cost || 1,
       timestamp: Date.now(),
     });
     writePipeline.expire(`${this.redisName}:queue:${requestId}`, 5);
@@ -393,6 +404,7 @@ export default class Client {
         this.pendingRequests.push({
           priority: Number(request.priority),
           timestamp: Number(request.timestamp),
+          cost: Number(request.cost),
           requestId: each,
         });
       }
@@ -416,6 +428,8 @@ export default class Client {
     if (this.interval) clearInterval(this.interval);
     const keys = await this.redis.keys(`${this.redisName}*`);
     if (keys.length > 0) await this.redis.del(keys);
+    this.redisListener.off("message", this.handleRedisMessage.bind(this));
+    await this.redisListener.quit();
     this.logger.info(`Client ${this.name} | Destroyed`);
   }
 }

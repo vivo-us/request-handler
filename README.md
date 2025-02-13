@@ -126,6 +126,7 @@ All normal Axios [Request Config](https://axios-http.com/docs/req_config) option
 - `method`: The HTTP method to use for the request.
 - `priority` *(optional)*: The priority of the request being sent, with higher numbers being higher priority. Defaults to 1. Requests with higher priority will be sent before requests with lower priority.
 - `metadata` *(optional)*: Any optinal metadata you want to store with the request.
+- `cost` *(optional)*: The number of tokens to remove from the rate limit when the request is made. Defaults to 1.
 
 ### Client Options
 

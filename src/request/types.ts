@@ -41,6 +41,7 @@ export type ResponseInterceptor = (
 
 export interface RequestConfig extends AxiosRequestConfig {
   clientName: "default" | string;
+  method: Method;
   /**
    * The priority of the request.
    *
@@ -53,7 +54,12 @@ export interface RequestConfig extends AxiosRequestConfig {
    * Metadata to be associated with the request.
    */
   metadata?: Record<string, any>;
-  method: Method;
+  /**
+   * The cost of the request to the rate limiter. This is helpful when some requests are more expensive than others.
+   *
+   * **Default value: 1**
+   */
+  cost?: number;
 }
 
 export interface RequestOptions {

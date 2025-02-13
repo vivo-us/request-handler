@@ -88,4 +88,5 @@ export interface RequestMetadata {
   priority: number;
   timestamp: number;
   requestId: string;
+  cost: number;
 }
