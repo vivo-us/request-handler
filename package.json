@@ -1,6 +1,6 @@
 {
   "name": "@vivo-technology/request-handler",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "An external API management tool that simplifies authentication and usage of external APIs",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -29,13 +29,13 @@
   "dependencies": {
     "axios": "^1.7.9",
     "crypto-js": "^4.2.0",
-    "ioredis": "^5.4.2",
+    "ioredis": "^5.5.0",
     "uuid": "^11.0.5",
     "winston": "^3.17.0"
   },
   "devDependencies": {
     "@types/crypto-js": "^4.2.2",
-    "@types/node": "^22.12.0",
+    "@types/node": "^22.13.2",
     "@types/uuid": "^10.0.0",
     "typescript": "^5.7.3"
   }
