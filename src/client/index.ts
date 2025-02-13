@@ -428,6 +428,8 @@ export default class Client {
     if (this.interval) clearInterval(this.interval);
     const keys = await this.redis.keys(`${this.redisName}*`);
     if (keys.length > 0) await this.redis.del(keys);
+    this.redisListener.off("message", this.handleRedisMessage.bind(this));
+    await this.redisListener.quit();
     this.logger.info(`Client ${this.name} | Destroyed`);
   }
 }
