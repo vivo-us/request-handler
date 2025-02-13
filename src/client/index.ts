@@ -128,7 +128,7 @@ export default class Client {
     } else if (channel === `${this.redisName}:requestDone`) {
       if (this.rateLimit.type !== "concurrencyLimit") return;
       if (this.role === "slave") return;
-      this.addTokens();
+      this.addTokens(Number(message));
     } else return;
   }
 
@@ -252,9 +252,11 @@ export default class Client {
    *
    * If the client's bucket is not full, the method will add tokens to the client's bucket and emit a tokensAdded event.
    *
+   * @param cost The cost of the request. If the cost is not provided, the method will add 1 token to the client's bucket.
+   *
    */
 
-  private addTokens() {
+  private addTokens(cost?: number) {
     if (this.rateLimit.type === "noLimit") return;
     if (this.freezeEndDate && this.rateLimit.type === "requestLimit") return;
     const max =
@@ -266,7 +268,9 @@ export default class Client {
     else if (this.tokens === max) return;
     else {
       const tokensToAdd =
-        this.rateLimit.type === "requestLimit" ? this.rateLimit.tokensToAdd : 1;
+        this.rateLimit.type === "requestLimit"
+          ? this.rateLimit.tokensToAdd
+          : cost || 1;
       if (tokensToAdd + this.tokens > max) this.tokens = max;
       else this.tokens += tokensToAdd;
       this.emitter.emit("tokensAdded", this.tokens);
@@ -282,10 +286,10 @@ export default class Client {
     try {
       response = await this.http.request(config);
     } catch (error: any) {
-      await this.handleResponse(error);
+      await this.handleResponse(config, error);
       throw error;
     }
-    await this.handleResponse(response);
+    await this.handleResponse(config, response);
     return response;
   }
 
@@ -293,8 +297,14 @@ export default class Client {
    * This method adds back concurrency tokens, logs the request and response, and updates the rate limit if necessary.
    */
 
-  private async handleResponse(res: AxiosResponse | AxiosError | any) {
-    await this.redis.publish(`${this.redisName}:requestDone`, "");
+  private async handleResponse(
+    config: RequestConfig,
+    res: AxiosResponse | AxiosError | any
+  ) {
+    await this.redis.publish(
+      `${this.redisName}:requestDone`,
+      `${config.cost || 1}`
+    );
     if (this.isResponse(res) && this.rateLimitChange) {
       const newLimit = await this.rateLimitChange(this.rateLimit, res);
       if (newLimit) await this.updateRateLimit(newLimit);
