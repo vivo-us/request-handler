@@ -18,7 +18,6 @@ export type RateLimitChange = (
 export interface ClientConstructorData {
   client: CreateClientData;
   redis: IORedis;
-  redisListener: IORedis;
   requestHandlerRedisName: string;
   logger: Logger;
   key: string;
@@ -88,5 +87,6 @@ export interface RequestMetadata {
   priority: number;
   timestamp: number;
   requestId: string;
+  clientId: string;
   cost: number;
 }

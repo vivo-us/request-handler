@@ -20,6 +20,7 @@ export default class Client {
   public authenticator?: Authenticator;
   public rateLimit: RateLimitData;
   public createData: CreateClientData;
+  private id: string = v4();
   private role: ClientRole = "slave";
   private redis: IORedis;
   private redisListener: IORedis;
@@ -40,7 +41,7 @@ export default class Client {
     this.http = axios.create(client.axiosOptions);
     this.logger = logger;
     this.redis = redis;
-    this.redisListener = data.redisListener;
+    this.redisListener = data.redis.duplicate().setMaxListeners(5);
     this.name = client.name;
     this.createData = client;
     this.redisName = `${data.requestHandlerRedisName}:${(
@@ -70,11 +71,10 @@ export default class Client {
 
   public async init() {
     await this.updateRateLimit(this.rateLimit);
-    await this.redisListener.subscribe(`${this.redisName}:freezeRequests`);
-    await this.redisListener.subscribe(`${this.redisName}:rateLimitUpdated`);
-    await this.redisListener.subscribe(`${this.redisName}:requestAdded`);
-    await this.redisListener.subscribe(`${this.redisName}:requestReady`);
-    await this.redisListener.subscribe(`${this.redisName}:requestDone`);
+    await this.redisListener.subscribe(
+      `${this.redisName}:${this.id}:requestReady`,
+      `${this.redisName}:rateLimitUpdated`
+    );
     this.redisListener.on("message", this.handleRedisMessage.bind(this));
   }
 
@@ -126,10 +126,9 @@ export default class Client {
       this.pendingRequests.set(request.requestId, request);
       this.hasUnsortedRequests = true;
       await this.processRequests();
-    } else if (channel === `${this.redisName}:requestReady`) {
+    } else if (channel === `${this.redisName}:${this.id}:requestReady`) {
       this.emitter.emit(`requestReady:${message}`, message);
     } else if (channel === `${this.redisName}:requestDone`) {
-      if (this.rateLimit.type !== "concurrencyLimit") return;
       if (this.role === "slave") return;
       this.addTokens(Number(message));
     } else return;
@@ -155,7 +154,8 @@ export default class Client {
         await this.waitForTokens(request.cost);
         this.tokens -= request.cost || 1;
         this.pendingRequests.delete(key);
-        await this.redis.publish(`${this.redisName}:requestReady`, key);
+        const channel = `${this.redisName}:${request.clientId}:requestReady`;
+        await this.redis.publish(channel, key);
       } while (this.pendingRequests.size > 0);
       this.processingId = undefined;
     } catch (e) {
@@ -298,10 +298,12 @@ export default class Client {
     config: RequestConfig,
     res: AxiosResponse | AxiosError | any
   ) {
-    await this.redis.publish(
-      `${this.redisName}:requestDone`,
-      `${config.cost || 1}`
-    );
+    if (this.rateLimit.type === "concurrencyLimit") {
+      await this.redis.publish(
+        `${this.redisName}:requestDone`,
+        `${config.cost || 1}`
+      );
+    }
     if (this.isResponse(res) && this.rateLimitChange) {
       const newLimit = await this.rateLimitChange(this.rateLimit, res);
       if (newLimit) await this.updateRateLimit(newLimit);
@@ -353,6 +355,7 @@ export default class Client {
           priority: config.priority || 1,
           cost: config.cost || 1,
           timestamp: Date.now(),
+          clientId: this.id,
           requestId,
         })
       );
@@ -388,7 +391,25 @@ export default class Client {
     if (role === this.role) return;
     this.role = role;
     if (this.interval) clearInterval(this.interval);
-    if (this.role === "slave" || this.rateLimit.type === "noLimit") return;
+    if (this.rateLimit.type === "noLimit") return;
+    if (this.createData.sharedRateLimitClientName) return;
+    if (this.role === "slave") {
+      await this.redisListener.unsubscribe(
+        `${this.redisName}:freezeRequests`,
+        `${this.redisName}:requestAdded`,
+        ...(this.rateLimit.type === "concurrencyLimit"
+          ? [`${this.redisName}:requestDone`]
+          : [])
+      );
+      return;
+    }
+    await this.redisListener.subscribe(
+      `${this.redisName}:freezeRequests`,
+      `${this.redisName}:requestAdded`,
+      ...(this.rateLimit.type === "concurrencyLimit"
+        ? [`${this.redisName}:requestDone`]
+        : [])
+    );
     this.addInterval();
     await this.checkExistingRequests();
   }
@@ -412,6 +433,7 @@ export default class Client {
           priority: Number(request.priority),
           timestamp: Number(request.timestamp),
           cost: Number(request.cost),
+          clientId: this.id,
           requestId: each,
         });
         this.hasUnsortedRequests = true;

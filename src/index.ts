@@ -295,7 +295,6 @@ export default class RequestHandler {
     const client = new Client({
       client: data,
       redis: this.redis,
-      redisListener: this.redisListener,
       requestHandlerRedisName: this.redisName,
       logger: this.logger,
       key: this.key,
