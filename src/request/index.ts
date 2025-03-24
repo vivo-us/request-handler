@@ -70,7 +70,7 @@ export default class Request {
     );
     let response;
     do {
-      await this.client.waitForRequestReady(this.id, this.config);
+      await this.client.waitForRequestReady(this.id, this.config, this.retries);
       if (this.requestInterceptor) {
         this.config = await this.requestInterceptor(this.config);
       }
@@ -85,6 +85,7 @@ export default class Request {
       }
       try {
         response = await this.client.sendRequest(this.config);
+        await this.client.handleResponse(this.id, this.config, response);
       } catch (error: any) {
         if (this.retries === this.retryOptions.maxRetries) {
           throw new BaseError(
@@ -108,6 +109,7 @@ export default class Request {
           );
         }
         const shouldRetry = await this.handleError(error);
+        await this.client.handleResponse(this.id, this.config, error);
         if (shouldRetry) this.retries++;
         else throw error;
       }
@@ -213,7 +215,7 @@ export default class Request {
     const power =
       this.retryOptions.retryBackoffMethod === "exponential" ? 2 : 1;
     const waitTime = Math.pow(this.retries + 1, power) * backoffBase;
-    await this.client.freezeRequests(waitTime);
+    await this.client.freezeRequests(waitTime, type === "Rate Limited");
     this.debug(`${type} | ${retryMessage}`);
     return true;
   }

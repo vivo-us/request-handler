@@ -31,7 +31,9 @@ export default class Client {
   private rateLimitChange?: RateLimitChange;
   private pendingRequests: Map<string, RequestMetadata> = new Map();
   private tokens: number = 0;
-  private freezeEndDate?: Date;
+  private freezeTimeout?: NodeJS.Timeout;
+  private thawRequestCount: number = 0;
+  private thawRequestId?: string;
   private processingId?: string;
   private emitter: NodeJS.EventEmitter = new EventEmitter();
   private hasUnsortedRequests: boolean = false;
@@ -56,6 +58,7 @@ export default class Client {
     this.metadata = client.metadata;
     this.requestOptions = client.requestOptions;
     this.rateLimitChange = client.rateLimitChange;
+    this.emitter.on("processRequests", this.processRequests.bind(this));
     if (!client.authentication) return;
     this.authenticator = new Authenticator(
       client.authentication,
@@ -108,11 +111,15 @@ export default class Client {
   private async handleRedisMessage(channel: string, message: string) {
     if (channel === `${this.redisName}:freezeRequests`) {
       if (this.role === `slave`) return;
-      this.logger.debug(`Freezing requests for ${message}ms...`);
-      this.freezeEndDate = new Date(Date.now() + Number(message));
+      const { ms, isRateLimited } = JSON.parse(message);
+      this.logger.debug(`Freezing requests for ${ms}ms...`);
       if (this.rateLimit.type === "requestLimit") this.tokens = 0;
-      await this.wait(Number(message));
-      this.freezeEndDate = undefined;
+      if (this.freezeTimeout) clearTimeout(this.freezeTimeout);
+      if (isRateLimited) this.thawRequestCount = 3;
+      this.freezeTimeout = setTimeout(() => {
+        this.freezeTimeout = undefined;
+        this.emitter.emit("processRequests");
+      }, ms);
     } else if (channel === `${this.redisName}:rateLimitUpdated`) {
       const data = JSON.parse(message);
       this.rateLimit = data;
@@ -125,12 +132,17 @@ export default class Client {
       const request: RequestMetadata = JSON.parse(message);
       this.pendingRequests.set(request.requestId, request);
       this.hasUnsortedRequests = true;
-      await this.processRequests();
+      this.emitter.emit("processRequests");
     } else if (channel === `${this.redisName}:${this.id}:requestReady`) {
       this.emitter.emit(`requestReady:${message}`, message);
     } else if (channel === `${this.redisName}:requestDone`) {
       if (this.role === "slave") return;
-      this.addTokens(Number(message));
+      const { cost, status, requestId } = JSON.parse(message);
+      if (this.rateLimit.type === "concurrencyLimit") this.addTokens(cost);
+      if (requestId !== this.thawRequestId) return;
+      if (status === "success") this.thawRequestCount--;
+      this.thawRequestId = undefined;
+      this.emitter.emit("processRequests");
     } else return;
   }
 
@@ -150,12 +162,14 @@ export default class Client {
         const next = this.getNextRequest();
         if (!next) break;
         const [key, request] = next;
-        await this.waitForFreeze();
         await this.waitForTokens(request.cost);
+        if (this.freezeTimeout || this.thawRequestId) break;
         this.tokens -= request.cost || 1;
         this.pendingRequests.delete(key);
         const channel = `${this.redisName}:${request.clientId}:requestReady`;
+        if (this.thawRequestCount) this.thawRequestId = key;
         await this.redis.publish(channel, key);
+        if (this.thawRequestCount) break;
       } while (this.pendingRequests.size > 0);
       this.processingId = undefined;
     } catch (e) {
@@ -169,31 +183,17 @@ export default class Client {
       this.pendingRequests = new Map(
         [...this.pendingRequests].sort(([aKey, aValue], [bKey, bValue]) => {
           if (aValue.priority === bValue.priority) {
-            if (aValue.timestamp === bValue.timestamp) {
-              return aValue.requestId < bValue.requestId ? -1 : 1;
-            } else return aValue.timestamp - bValue.timestamp;
+            if (aValue.retries === bValue.retries) {
+              if (aValue.timestamp === bValue.timestamp) {
+                return aValue.requestId < bValue.requestId ? -1 : 1;
+              } else return aValue.timestamp - bValue.timestamp;
+            } else return bValue.retries - aValue.retries;
           } else return bValue.priority - aValue.priority;
         })
       );
       this.hasUnsortedRequests = false;
     }
     return this.pendingRequests.entries().next().value;
-  }
-
-  /**
-   * This method waits for the freeze to end if the client has a freeze.
-   */
-
-  private async waitForFreeze() {
-    return new Promise(async (resolve) => {
-      if (this.freezeEndDate) {
-        const freezeTime = this.freezeEndDate.getTime() - Date.now();
-        if (freezeTime > 0) await this.wait(freezeTime);
-        // If the freeze time has passed, remove the freeze key
-        else this.freezeEndDate = undefined;
-        resolve(true);
-      } else resolve(true);
-    });
   }
 
   /**
@@ -214,15 +214,6 @@ export default class Client {
       };
       this.emitter.on("tokensAdded", listener);
     });
-  }
-
-  /**
-   * Waits for a specified amount of time.
-   *
-   * @param time The time to wait in milliseconds.
-   */
-  private wait(time: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, time));
   }
 
   /**
@@ -256,7 +247,7 @@ export default class Client {
 
   private addTokens(cost?: number) {
     if (this.rateLimit.type === "noLimit") return;
-    if (this.freezeEndDate && this.rateLimit.type === "requestLimit") return;
+    if (this.freezeTimeout && this.rateLimit.type === "requestLimit") return;
     const max =
       this.rateLimit.type === "requestLimit"
         ? this.rateLimit.maxTokens
@@ -284,10 +275,8 @@ export default class Client {
     try {
       response = await this.http.request(config);
     } catch (error: any) {
-      await this.handleResponse(config, error);
       throw error;
     }
-    await this.handleResponse(config, response);
     return response;
   }
 
@@ -295,16 +284,19 @@ export default class Client {
    * This method adds back concurrency tokens, logs the request and response, and updates the rate limit if necessary.
    */
 
-  private async handleResponse(
+  public async handleResponse(
+    requestId: string,
     config: RequestConfig,
     res: AxiosResponse | AxiosError | any
   ) {
-    if (this.rateLimit.type === "concurrencyLimit") {
-      await this.redis.publish(
-        `${this.redisName}:requestDone`,
-        `${config.cost || 1}`
-      );
-    }
+    await this.redis.publish(
+      `${this.redisName}:requestDone`,
+      JSON.stringify({
+        cost: config.cost || 1,
+        status: this.isResponse(res) ? "success" : "failure",
+        requestId,
+      })
+    );
     if (this.isResponse(res) && this.rateLimitChange) {
       const newLimit = await this.rateLimitChange(this.rateLimit, res);
       if (newLimit) await this.updateRateLimit(newLimit);
@@ -333,7 +325,8 @@ export default class Client {
 
   public async waitForRequestReady(
     requestId: string,
-    config: RequestConfig
+    config: RequestConfig,
+    retries: number
   ): Promise<boolean> {
     return new Promise(async (resolve) => {
       if (this.rateLimit.type === "noLimit") {
@@ -356,6 +349,7 @@ export default class Client {
           priority: config.priority || 1,
           cost: config.cost || 1,
           timestamp: Date.now(),
+          retries,
           clientId: this.id,
           requestId,
         })
@@ -434,21 +428,25 @@ export default class Client {
           priority: Number(request.priority),
           timestamp: Number(request.timestamp),
           cost: Number(request.cost),
+          retries: 0,
           clientId: this.id,
           requestId: each,
         });
         this.hasUnsortedRequests = true;
       }
     }
-    await this.processRequests();
+    this.emitter.emit("processRequests");
   }
 
   /**
    * This method sends a message to the freezeRequests channel in Redis to freeze the client for a specified amount of time.
    */
 
-  public async freezeRequests(ms: number) {
-    await this.redis.publish(`${this.redisName}:freezeRequests`, ms.toString());
+  public async freezeRequests(ms: number, isRateLimited: boolean) {
+    await this.redis.publish(
+      `${this.redisName}:freezeRequests`,
+      JSON.stringify({ ms, isRateLimited })
+    );
   }
 
   /**

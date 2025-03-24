@@ -89,4 +89,5 @@ export interface RequestMetadata {
   requestId: string;
   clientId: string;
   cost: number;
+  retries: number;
 }
