@@ -28,11 +28,12 @@ export default class Client {
   private http: AxiosInstance;
   private interval?: NodeJS.Timeout;
   private rateLimitChange?: RateLimitChange;
-  private pendingRequests: RequestMetadata[] = [];
+  private pendingRequests: Map<string, RequestMetadata> = new Map();
   private tokens: number = 0;
   private freezeEndDate?: Date;
   private processingId?: string;
   private emitter: NodeJS.EventEmitter = new EventEmitter();
+  private hasUnsortedRequests: boolean = false;
 
   constructor(data: ClientConstructorData) {
     const { client, redis, logger, key } = data;
@@ -98,7 +99,7 @@ export default class Client {
    *
    * If a message is received on the rateLimitUpdated channel, the client will update its rate limit and reset the interval for adding tokens to the client's bucket.
    *
-   * If a message is received on the requestAdded channel, the client will add the request to the pendingRequests array and process the requests.
+   * If a message is received on the requestAdded channel, the client will add the request to the pendingRequests map and process the requests.
    *
    * @param channel The channel the message was sent on
    * @param message The message sent
@@ -121,7 +122,9 @@ export default class Client {
       this.addInterval();
     } else if (channel === `${this.redisName}:requestAdded`) {
       if (this.role === "slave") return;
-      this.pendingRequests.push(JSON.parse(message));
+      const request: RequestMetadata = JSON.parse(message);
+      this.pendingRequests.set(request.requestId, request);
+      this.hasUnsortedRequests = true;
       await this.processRequests();
     } else if (channel === `${this.redisName}:requestReady`) {
       this.emitter.emit(`requestReady:${message}`, message);
@@ -145,29 +148,35 @@ export default class Client {
     try {
       do {
         if (this.processingId !== id) break;
-        if (this.pendingRequests.length === 0) break;
-        this.pendingRequests = this.pendingRequests.sort((a, b) => {
-          if (a.priority === b.priority) {
-            if (a.timestamp === b.timestamp) {
-              return a.requestId < b.requestId ? -1 : 1;
-            } else return a.timestamp - b.timestamp;
-          } else return b.priority - a.priority;
-        });
-        const request = this.pendingRequests.shift();
-        if (!request) return;
+        const next = this.getNextRequest();
+        if (!next) break;
+        const [key, request] = next;
         await this.waitForFreeze();
         await this.waitForTokens(request.cost);
         this.tokens -= request.cost || 1;
-        await this.redis.publish(
-          `${this.redisName}:requestReady`,
-          request.requestId
-        );
-      } while (this.pendingRequests.length > 0);
+        this.pendingRequests.delete(key);
+        await this.redis.publish(`${this.redisName}:requestReady`, key);
+      } while (this.pendingRequests.size > 0);
       this.processingId = undefined;
     } catch (e) {
       this.processingId = undefined;
       throw e;
     }
+  }
+
+  private getNextRequest() {
+    if (this.hasUnsortedRequests) {
+      this.pendingRequests = new Map(
+        [...this.pendingRequests].sort(([aKey, aValue], [bKey, bValue]) => {
+          if (aValue.priority === bValue.priority) {
+            if (aValue.timestamp === bValue.timestamp) {
+              return aValue.requestId < bValue.requestId ? -1 : 1;
+            } else return aValue.timestamp - bValue.timestamp;
+          } else return bValue.priority - aValue.priority;
+        })
+      );
+    }
+    return this.pendingRequests.entries().next().value;
   }
 
   /**
@@ -399,12 +408,13 @@ export default class Client {
       if (!request.priority) {
         await this.redis.srem(`${this.redisName}:queue`, each);
       } else {
-        this.pendingRequests.push({
+        this.pendingRequests.set(each, {
           priority: Number(request.priority),
           timestamp: Number(request.timestamp),
           cost: Number(request.cost),
           requestId: each,
         });
+        this.hasUnsortedRequests = true;
       }
     }
     await this.processRequests();
