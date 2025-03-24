@@ -48,7 +48,7 @@ export default class RequestHandler {
     this.redisName = `${
       data.redisKeyPrefix ? `${data.redisKeyPrefix}:` : ""
     }requestHandler`;
-    this.redisListener = data.redis.duplicate().setMaxListeners(0);
+    this.redisListener = data.redis.duplicate().setMaxListeners(3);
     this.key = data.key;
     this.clientGenerators = data.clientGenerators || {};
     this.defaultClient = data.defaultClientOptions || {
@@ -308,9 +308,11 @@ export default class RequestHandler {
    */
 
   private async startRedis() {
-    await this.redisListener.subscribe(`${this.redisName}:regenerateClients`);
-    await this.redisListener.subscribe(`${this.redisName}:destroyClient`);
-    await this.redisListener.subscribe(`${this.redisName}:nodeUpdate`);
+    await this.redisListener.subscribe(
+      `${this.redisName}:regenerateClients`,
+      `${this.redisName}:destroyClient`,
+      `${this.redisName}:nodeUpdate`
+    );
     this.redisListener.on("message", this.handleRedisMessage.bind(this));
   }
 
