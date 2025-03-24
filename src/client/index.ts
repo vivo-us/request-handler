@@ -175,6 +175,7 @@ export default class Client {
           } else return bValue.priority - aValue.priority;
         })
       );
+      this.hasUnsortedRequests = false;
     }
     return this.pendingRequests.entries().next().value;
   }
