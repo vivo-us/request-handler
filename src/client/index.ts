@@ -31,7 +31,7 @@ export default class Client {
   private pendingRequests: RequestMetadata[] = [];
   private tokens: number = 0;
   private freezeEndDate?: Date;
-  private processingIds: string[] = [];
+  private processingId?: string;
   private emitter: NodeJS.EventEmitter = new EventEmitter();
 
   constructor(data: ClientConstructorData) {
@@ -139,18 +139,12 @@ export default class Client {
    */
 
   private async processRequests() {
-    if (this.processingIds.length > 0) return;
+    if (this.processingId || this.role === "slave") return;
     const id = v4();
-    this.processingIds.push(id);
+    this.processingId = id;
     try {
       do {
-        if (this.processingIds.length > 1) {
-          const first = this.processingIds[0];
-          if (first !== id) {
-            this.removeProcessingId(id);
-            break;
-          }
-        }
+        if (this.processingId !== id) break;
         if (this.pendingRequests.length === 0) break;
         this.pendingRequests = this.pendingRequests.sort((a, b) => {
           if (a.priority === b.priority) {
@@ -169,17 +163,11 @@ export default class Client {
           request.requestId
         );
       } while (this.pendingRequests.length > 0);
-      this.removeProcessingId(id);
+      this.processingId = undefined;
     } catch (e) {
-      this.removeProcessingId(id);
+      this.processingId = undefined;
       throw e;
     }
-  }
-
-  /** This method removes the processing ID from the processingIds array. */
-
-  private removeProcessingId(id: string) {
-    this.processingIds = this.processingIds.filter((each) => each !== id);
   }
 
   /**
