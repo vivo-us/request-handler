@@ -127,7 +127,7 @@ export default class RequestHandler {
    * @param generatorNames Optional names of generators to regenerate clients for
    */
 
-  protected async regenerateClients(generatorNames?: string[]) {
+  public async regenerateClients(generatorNames?: string[]) {
     await this.redis.publish(
       `${this.redisName}:regenerateClients`,
       JSON.stringify(generatorNames || [])
@@ -140,7 +140,7 @@ export default class RequestHandler {
    * @param clientName The name of the client to destroy
    */
 
-  protected async destroyClient(clientName: string) {
+  public async destroyClient(clientName: string) {
     this.getClient(clientName);
     await this.redis.publish(
       `${this.redisName}:destroyClient`,
