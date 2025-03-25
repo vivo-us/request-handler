@@ -1,4 +1,5 @@
 import { RequestConfig } from "../request/types";
+import handleResponse from "./handleResponse";
 import { AxiosResponse } from "axios";
 import BaseError from "../baseError";
 import Request from "../request";
@@ -12,10 +13,10 @@ async function handleRequest(this: Client, config: RequestConfig) {
     try {
       res = await this.http.request(request.config);
     } catch (error: any) {
-      await this.handleResponse(request, error);
+      await handleResponse.bind(this)(request, error);
       continue;
     }
-    await this.handleResponse(request, res);
+    await handleResponse.bind(this)(request, res);
   } while (!res && request.retries <= request.maxRetries);
   return await handlePostResponse.bind(this)(request, res);
 }
@@ -50,7 +51,7 @@ function handleRequestDefaults(this: Client, request: Request) {
 }
 
 async function handlePreRequest(this: Client, request: Request) {
-  await this.waitForRequestReady(request);
+  await waitForRequestReady.bind(this)(request);
   if (this.requestOptions?.requestInterceptor) {
     request.config = await this.requestOptions.requestInterceptor(
       request.config
@@ -78,6 +79,64 @@ async function handlePostResponse(
   }
   this.logger.debug(`Request ID: ${request.id} | Status: ${res.status}`);
   return res;
+}
+
+/**
+ * This method waits for the request to be ready to be sent.
+ *
+ * If the client has no rate limit, the method will resolve immediately.
+ *
+ * If the client has a rate limit, the method will add the request to the queue and wait for the request to be ready.
+ *
+ * If the request is not ready within 30 seconds, the method will resolve false.
+ */
+
+async function waitForRequestReady(
+  this: Client,
+  request: Request
+): Promise<boolean> {
+  return new Promise(async (resolve) => {
+    if (this.rateLimit.type === "noLimit") {
+      resolve(true);
+      return;
+    }
+    await addToQueue.bind(this)(request);
+    const interval = setInterval(async () => {
+      await this.redis.expire(`${this.redisName}:queue:${request.id}`, 5);
+    }, 2500);
+    this.emitter.once(`requestReady:${request.id}`, async (message) => {
+      clearInterval(interval);
+      await this.redis.srem(`${this.redisName}:queue`, request.id);
+      await this.redis.del(`${this.redisName}:queue:${request.id}`);
+      resolve(true);
+    });
+    await this.redis.publish(
+      `${this.redisName}:requestAdded`,
+      JSON.stringify({
+        priority: request.config.priority || 1,
+        cost: request.config.cost || 1,
+        timestamp: Date.now(),
+        retries: request.retries,
+        clientId: this.id,
+        requestId: request.id,
+      })
+    );
+  });
+}
+
+/**
+ * Adds the request to the queue and sets the priority, cost, and timestamp.
+ */
+async function addToQueue(this: Client, request: Request) {
+  const writePipeline = this.redis.pipeline();
+  writePipeline.sadd(`${this.redisName}:queue`, request.id);
+  writePipeline.hset(`${this.redisName}:queue:${request.id}`, {
+    priority: request.config.priority || 1,
+    cost: request.config.cost || 1,
+    timestamp: Date.now(),
+  });
+  writePipeline.expire(`${this.redisName}:queue:${request.id}`, 5);
+  await writePipeline.exec();
 }
 
 export default handleRequest;

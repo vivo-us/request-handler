@@ -1,8 +1,6 @@
-import waitForRequestReady from "./waitForRequestReady";
 import handleRedisMessage from "./handleRedisMessage";
 import { Authenticator } from "../authenticator";
 import processRequests from "./processRequests";
-import handleResponse from "./handleResponse";
 import axios, { AxiosInstance } from "axios";
 import handleRequest from "./handleRequest";
 import * as ClientTypes from "./types";
@@ -42,8 +40,6 @@ export default class Client {
   public updateRole = updateRole.bind(this);
   private processRequests = processRequests.bind(this);
   private handleRedisMessage = handleRedisMessage.bind(this);
-  protected handleResponse = handleResponse.bind(this);
-  protected waitForRequestReady = waitForRequestReady.bind(this);
 
   constructor(data: ClientTypes.ClientConstructorData) {
     this.http = axios.create(data.client.axiosOptions);
