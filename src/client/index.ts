@@ -38,8 +38,6 @@ export default class Client {
 
   public handleRequest = handleRequest.bind(this);
   public updateRole = updateRole.bind(this);
-  private processRequests = processRequests.bind(this);
-  private handleRedisMessage = handleRedisMessage.bind(this);
 
   constructor(data: ClientTypes.ClientConstructorData) {
     this.http = axios.create(data.client.axiosOptions);
@@ -60,7 +58,6 @@ export default class Client {
     this.metadata = data.client.metadata;
     this.requestOptions = data.client.requestOptions || {};
     this.rateLimitChange = data.client.rateLimitChange;
-    this.emitter.on("processRequests", this.processRequests.bind(this));
     if (!data.client.authentication) return;
     this.authenticator = new Authenticator(
       data.client.authentication,
@@ -80,7 +77,8 @@ export default class Client {
       `${this.redisName}:${this.id}:requestReady`,
       `${this.redisName}:rateLimitUpdated`
     );
-    this.redisListener.on("message", this.handleRedisMessage.bind(this));
+    this.emitter.on("processRequests", processRequests.bind(this));
+    this.redisListener.on("message", handleRedisMessage.bind(this));
   }
 
   /**
@@ -91,7 +89,8 @@ export default class Client {
     if (this.interval) clearInterval(this.interval);
     const keys = await this.redis.keys(`${this.redisName}*`);
     if (keys.length > 0) await this.redis.del(keys);
-    this.redisListener.off("message", this.handleRedisMessage.bind(this));
+    this.emitter.off("processRequests", processRequests.bind(this));
+    this.redisListener.off("message", handleRedisMessage.bind(this));
     await this.redisListener.quit();
     this.logger.info(`Client ${this.name} | Destroyed`);
   }
