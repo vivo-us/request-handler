@@ -20,9 +20,6 @@ async function handleRedisMessage(
   message: string
 ) {
   switch (channel) {
-    case `${this.redisName}:rateLimitUpdated`:
-      handleRateLimitUpdated.bind(this)(message);
-      break;
     case `${this.redisName}:requestAdded`:
       handleRequestAdded.bind(this)(message);
       break;
@@ -31,6 +28,9 @@ async function handleRedisMessage(
       break;
     case `${this.redisName}:requestDone`:
       handleRequestDone.bind(this)(message);
+      break;
+    case `${this.redisName}:rateLimitUpdated`:
+      handleRateLimitUpdated.bind(this)(message);
       break;
     default:
       return;

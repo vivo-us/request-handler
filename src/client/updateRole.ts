@@ -19,20 +19,14 @@ async function updateRole(this: Client, role: ClientRole) {
   if (this.createData.sharedRateLimitClientName) return;
   if (this.role === "slave") {
     await this.redisListener.unsubscribe(
-      `${this.redisName}:freezeRequests`,
       `${this.redisName}:requestAdded`,
-      ...(this.rateLimit.type === "concurrencyLimit"
-        ? [`${this.redisName}:requestDone`]
-        : [])
+      `${this.redisName}:requestDone`
     );
     return;
   }
   await this.redisListener.subscribe(
-    `${this.redisName}:freezeRequests`,
     `${this.redisName}:requestAdded`,
-    ...(this.rateLimit.type === "concurrencyLimit"
-      ? [`${this.redisName}:requestDone`]
-      : [])
+    `${this.redisName}:requestDone`
   );
   this.addInterval();
   await checkExistingRequests.bind(this)();
