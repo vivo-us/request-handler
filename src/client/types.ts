@@ -178,6 +178,12 @@ export interface RetryOptions {
   retryHandler?: RetryHandler;
   /** An array of status codes to retry on */
   retryStatusCodes?: number[];
+  /**
+   * The number of requests in a row must come back with a 2xx status to start sending requests at full speed again after a rate limit has been breached
+   *
+   * **Default value: 3**
+   */
+  thawRequestCount?: number;
 }
 
 export interface RequestDefaults {

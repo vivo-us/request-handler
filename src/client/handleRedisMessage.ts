@@ -69,7 +69,10 @@ function handleFreezeRequests(this: Client, data: RequestDoneData) {
   this.logger.debug(`Freezing requests for ${data.waitTime}ms...`);
   if (this.rateLimit.type === "requestLimit") this.tokens = 0;
   if (this.freezeTimeout) clearTimeout(this.freezeTimeout);
-  if (data.isRateLimited) this.thawRequestCount = 3;
+  if (data.isRateLimited) {
+    this.thawRequestCount =
+      this.requestOptions.retryOptions?.thawRequestCount || 3;
+  }
   this.freezeTimeout = setTimeout(() => {
     this.freezeTimeout = undefined;
     this.emitter.emit("processRequests");
