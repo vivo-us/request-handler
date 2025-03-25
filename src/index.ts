@@ -4,7 +4,6 @@ import { AxiosResponse } from "axios";
 import defaultLogger from "./logger";
 import BaseError from "./baseError";
 import { Logger } from "winston";
-import Request from "./request";
 import Client from "./client";
 import IORedis from "ioredis";
 import { v4 } from "uuid";
@@ -119,8 +118,7 @@ export default class RequestHandler {
   public async handleRequest(config: RequestConfig): Promise<AxiosResponse> {
     if (!this.isInitialized) await this.waitUntilInitialized();
     const client = this.getClient(config.clientName);
-    const request = new Request(client, config, this.logger);
-    return await request.send();
+    return await client.handleRequest(config);
   }
 
   /**

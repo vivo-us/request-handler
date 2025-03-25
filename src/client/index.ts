@@ -1,70 +1,76 @@
-import axios, { AxiosError, AxiosInstance, AxiosResponse } from "axios";
-import { RequestConfig, RequestOptions } from "../request/types";
-import { ClientRole, RequestMetadata } from "./types";
+import waitForRequestReady from "./waitForRequestReady";
+import handleRedisMessage from "./handleRedisMessage";
 import { Authenticator } from "../authenticator";
+import processRequests from "./processRequests";
+import handleResponse from "./handleResponse";
+import axios, { AxiosInstance } from "axios";
+import handleRequest from "./handleRequest";
+import * as ClientTypes from "./types";
+import updateRole from "./updateRole";
 import EventEmitter from "events";
 import { Logger } from "winston";
 import IORedis from "ioredis";
 import { v4 } from "uuid";
-import {
-  ClientConstructorData,
-  CreateClientData,
-  RateLimitChange,
-  RateLimitData,
-} from "./types";
 
 export default class Client {
   public name: string;
   public metadata?: { [key: string]: any };
-  public requestOptions?: RequestOptions;
-  public authenticator?: Authenticator;
-  public rateLimit: RateLimitData;
-  public createData: CreateClientData;
-  private id: string = v4();
-  private role: ClientRole = "slave";
-  private redis: IORedis;
-  private redisListener: IORedis;
-  private logger: Logger;
-  private redisName: string;
-  private http: AxiosInstance;
-  private interval?: NodeJS.Timeout;
-  private rateLimitChange?: RateLimitChange;
-  private pendingRequests: Map<string, RequestMetadata> = new Map();
-  private tokens: number = 0;
-  private freezeTimeout?: NodeJS.Timeout;
-  private thawRequestCount: number = 0;
-  private thawRequestId?: string;
-  private processingId?: string;
-  private emitter: NodeJS.EventEmitter = new EventEmitter();
-  private hasUnsortedRequests: boolean = false;
+  public requestOptions: ClientTypes.RequestOptions;
+  public rateLimit: ClientTypes.RateLimitData;
+  protected authenticator?: Authenticator;
+  protected createData: ClientTypes.CreateClientData;
+  protected rateLimitChange?: ClientTypes.RateLimitChange;
+  protected http: AxiosInstance;
+  protected id: string = v4();
+  protected role: ClientTypes.ClientRole = "slave";
+  protected redis: IORedis;
+  protected redisListener: IORedis;
+  protected redisName: string;
+  protected interval?: NodeJS.Timeout;
+  protected hasUnsortedRequests: boolean = false;
+  protected pendingRequests: Map<string, ClientTypes.RequestMetadata> =
+    new Map();
+  protected emitter: NodeJS.EventEmitter = new EventEmitter();
+  protected logger: Logger;
+  protected tokens: number = 0;
+  protected freezeTimeout?: NodeJS.Timeout;
+  protected thawRequestCount: number = 0;
+  protected thawRequestId?: string;
+  protected processingId?: string;
 
-  constructor(data: ClientConstructorData) {
-    const { client, redis, logger, key } = data;
-    this.http = axios.create(client.axiosOptions);
-    this.logger = logger;
-    this.redis = redis;
-    this.redisListener = data.redis.duplicate().setMaxListeners(5);
-    this.name = client.name;
-    this.createData = client;
+  public handleRequest = handleRequest.bind(this);
+  public updateRole = updateRole.bind(this);
+  private processRequests = processRequests.bind(this);
+  private handleRedisMessage = handleRedisMessage.bind(this);
+  protected handleResponse = handleResponse.bind(this);
+  protected waitForRequestReady = waitForRequestReady.bind(this);
+
+  constructor(data: ClientTypes.ClientConstructorData) {
+    this.http = axios.create(data.client.axiosOptions);
+    this.logger = data.logger;
+    this.redis = data.redis;
+    this.redisListener = data.redis.duplicate().setMaxListeners(4);
+    this.name = data.client.name;
+    this.createData = data.client;
     this.redisName = `${data.requestHandlerRedisName}:${(
-      client.sharedRateLimitClientName || client.name
+      data.client.sharedRateLimitClientName || data.client.name
     ).replaceAll(/ /g, "_")}`;
-    this.rateLimit = client.rateLimit || { type: "noLimit" };
+    this.rateLimit = data.client.rateLimit || { type: "noLimit" };
     if (this.rateLimit.type === "concurrencyLimit") {
       this.tokens = this.rateLimit.maxConcurrency;
     } else if (this.rateLimit.type === "requestLimit") {
       this.tokens = this.rateLimit.maxTokens;
     }
-    this.metadata = client.metadata;
-    this.requestOptions = client.requestOptions;
-    this.rateLimitChange = client.rateLimitChange;
+    this.metadata = data.client.metadata;
+    this.requestOptions = data.client.requestOptions || {};
+    this.rateLimitChange = data.client.rateLimitChange;
     this.emitter.on("processRequests", this.processRequests.bind(this));
-    if (!client.authentication) return;
+    if (!data.client.authentication) return;
     this.authenticator = new Authenticator(
-      client.authentication,
+      data.client.authentication,
       this.redis,
       this.redisName,
-      key
+      data.key
     );
   }
 
@@ -82,12 +88,25 @@ export default class Client {
   }
 
   /**
+   * This method destroys the client by removing all keys associated with the client from Redis and clearing the interval for adding tokens to the client's bucket.
+   */
+
+  public async destroy() {
+    if (this.interval) clearInterval(this.interval);
+    const keys = await this.redis.keys(`${this.redisName}*`);
+    if (keys.length > 0) await this.redis.del(keys);
+    this.redisListener.off("message", this.handleRedisMessage.bind(this));
+    await this.redisListener.quit();
+    this.logger.info(`Client ${this.name} | Destroyed`);
+  }
+
+  /**
    * Updates the rate limit data for the client in Redis and publishes the new rate limit data to the requestHandler so that other nodes can update their clients.
    *
    * @param data The new rate limit data
    */
 
-  private async updateRateLimit(data: RateLimitData) {
+  protected async updateRateLimit(data: ClientTypes.RateLimitData) {
     await this.redis.set(`${this.redisName}:rateLimit`, JSON.stringify(data));
     await this.redis.publish(
       `${this.redisName}:rateLimitUpdated`,
@@ -96,131 +115,10 @@ export default class Client {
   }
 
   /**
-   * Handles messages from Redis.
-   *
-   * If a message is received on the freezeRequests channel and it is the master node, the client will set a freeze end time, clear its tokens, and wait for the specified amount of time before it clears the freeze.
-   *
-   * If a message is received on the rateLimitUpdated channel, the client will update its rate limit and reset the interval for adding tokens to the client's bucket.
-   *
-   * If a message is received on the requestAdded channel, the client will add the request to the pendingRequests map and process the requests.
-   *
-   * @param channel The channel the message was sent on
-   * @param message The message sent
-   */
-
-  private async handleRedisMessage(channel: string, message: string) {
-    if (channel === `${this.redisName}:freezeRequests`) {
-      if (this.role === `slave`) return;
-      const { ms, isRateLimited } = JSON.parse(message);
-      this.logger.debug(`Freezing requests for ${ms}ms...`);
-      if (this.rateLimit.type === "requestLimit") this.tokens = 0;
-      if (this.freezeTimeout) clearTimeout(this.freezeTimeout);
-      if (isRateLimited) this.thawRequestCount = 3;
-      this.freezeTimeout = setTimeout(() => {
-        this.freezeTimeout = undefined;
-        this.emitter.emit("processRequests");
-      }, ms);
-    } else if (channel === `${this.redisName}:rateLimitUpdated`) {
-      const data = JSON.parse(message);
-      this.rateLimit = data;
-      this.createData = { ...this.createData, rateLimit: data };
-      if (this.role === "slave") return;
-      if (this.interval) clearInterval(this.interval);
-      this.addInterval();
-    } else if (channel === `${this.redisName}:requestAdded`) {
-      if (this.role === "slave") return;
-      const request: RequestMetadata = JSON.parse(message);
-      this.pendingRequests.set(request.requestId, request);
-      this.hasUnsortedRequests = true;
-      this.emitter.emit("processRequests");
-    } else if (channel === `${this.redisName}:${this.id}:requestReady`) {
-      this.emitter.emit(`requestReady:${message}`, message);
-    } else if (channel === `${this.redisName}:requestDone`) {
-      if (this.role === "slave") return;
-      const { cost, status, requestId } = JSON.parse(message);
-      if (this.rateLimit.type === "concurrencyLimit") this.addTokens(cost);
-      if (requestId !== this.thawRequestId) return;
-      if (status === "success") this.thawRequestCount--;
-      this.thawRequestId = undefined;
-      this.emitter.emit("processRequests");
-    } else return;
-  }
-
-  /**
-   * This method works through the pending requests and processes them in order of priority and timestamp.
-   *
-   * When a request is at the top of the queue and the client has a token available, the client will remove the request cost and publish the request to the Request's requestReady channel.
-   */
-
-  private async processRequests() {
-    if (this.processingId || this.role === "slave") return;
-    const id = v4();
-    this.processingId = id;
-    try {
-      do {
-        if (this.processingId !== id) break;
-        const next = this.getNextRequest();
-        if (!next) break;
-        const [key, request] = next;
-        await this.waitForTokens(request.cost);
-        if (this.freezeTimeout || this.thawRequestId) break;
-        this.tokens -= request.cost || 1;
-        this.pendingRequests.delete(key);
-        const channel = `${this.redisName}:${request.clientId}:requestReady`;
-        if (this.thawRequestCount) this.thawRequestId = key;
-        await this.redis.publish(channel, key);
-        if (this.thawRequestCount) break;
-      } while (this.pendingRequests.size > 0);
-      this.processingId = undefined;
-    } catch (e) {
-      this.processingId = undefined;
-      throw e;
-    }
-  }
-
-  private getNextRequest() {
-    if (this.hasUnsortedRequests) {
-      this.pendingRequests = new Map(
-        [...this.pendingRequests].sort(([aKey, aValue], [bKey, bValue]) => {
-          if (aValue.priority === bValue.priority) {
-            if (aValue.retries === bValue.retries) {
-              if (aValue.timestamp === bValue.timestamp) {
-                return aValue.requestId < bValue.requestId ? -1 : 1;
-              } else return aValue.timestamp - bValue.timestamp;
-            } else return bValue.retries - aValue.retries;
-          } else return bValue.priority - aValue.priority;
-        })
-      );
-      this.hasUnsortedRequests = false;
-    }
-    return this.pendingRequests.entries().next().value;
-  }
-
-  /**
-   * This method checks for enough tokens in the client's bucket.
-   *
-   * If the client has enough tokens, the method will resolve immediately.
-   *
-   * If the client does not have enough tokens, the method will wait for enough tokens to be added to the client's bucket.
-   */
-
-  private waitForTokens(cost: number): Promise<boolean> {
-    if (this.tokens >= cost) return Promise.resolve(true);
-    return new Promise((resolve) => {
-      const listener = () => {
-        if (this.tokens < cost) return;
-        resolve(true);
-        this.emitter.off("tokensAdded", listener);
-      };
-      this.emitter.on("tokensAdded", listener);
-    });
-  }
-
-  /**
    * Adds an interval to the Client so that tokens will be added to the Client's bucket as specified by the rate limit.
    */
 
-  private addInterval() {
+  protected addInterval() {
     if (this.rateLimit.type !== "requestLimit") return;
     this.interval = setInterval(
       async () => this.addTokens(),
@@ -245,7 +143,7 @@ export default class Client {
    *
    */
 
-  private addTokens(cost?: number) {
+  protected addTokens(cost?: number) {
     if (this.rateLimit.type === "noLimit") return;
     if (this.freezeTimeout && this.rateLimit.type === "requestLimit") return;
     const max =
@@ -264,201 +162,5 @@ export default class Client {
       else this.tokens += tokensToAdd;
       this.emitter.emit("tokensAdded", this.tokens);
     }
-  }
-
-  /**
-   * This method takes care of actually sending the request, logging the results, adding tokens to the client's bucket, and updating the rate limit if necessary.
-   */
-
-  public async sendRequest(config: RequestConfig) {
-    let response;
-    try {
-      response = await this.http.request(config);
-    } catch (error: any) {
-      throw error;
-    }
-    return response;
-  }
-
-  /**
-   * This method adds back concurrency tokens, logs the request and response, and updates the rate limit if necessary.
-   */
-
-  public async handleResponse(
-    requestId: string,
-    config: RequestConfig,
-    res: AxiosResponse | AxiosError | any
-  ) {
-    await this.redis.publish(
-      `${this.redisName}:requestDone`,
-      JSON.stringify({
-        cost: config.cost || 1,
-        status: this.isResponse(res) ? "success" : "failure",
-        requestId,
-      })
-    );
-    if (this.isResponse(res) && this.rateLimitChange) {
-      const newLimit = await this.rateLimitChange(this.rateLimit, res);
-      if (newLimit) await this.updateRateLimit(newLimit);
-    }
-  }
-
-  /**
-   * This method checks if the response is an AxiosResponse.
-   */
-
-  private isResponse(
-    res: AxiosResponse | AxiosError | any
-  ): res is AxiosResponse {
-    return res.data !== undefined && res.status !== undefined;
-  }
-
-  /**
-   * This method waits for the request to be ready to be sent.
-   *
-   * If the client has no rate limit, the method will resolve immediately.
-   *
-   * If the client has a rate limit, the method will add the request to the queue and wait for the request to be ready.
-   *
-   * If the request is not ready within 30 seconds, the method will resolve false.
-   */
-
-  public async waitForRequestReady(
-    requestId: string,
-    config: RequestConfig,
-    retries: number
-  ): Promise<boolean> {
-    return new Promise(async (resolve) => {
-      if (this.rateLimit.type === "noLimit") {
-        resolve(true);
-        return;
-      }
-      await this.addToQueue(requestId, config);
-      const interval = setInterval(async () => {
-        await this.redis.expire(`${this.redisName}:queue:${requestId}`, 5);
-      }, 2500);
-      this.emitter.once(`requestReady:${requestId}`, async (message) => {
-        clearInterval(interval);
-        await this.redis.srem(`${this.redisName}:queue`, requestId);
-        await this.redis.del(`${this.redisName}:queue:${requestId}`);
-        resolve(true);
-      });
-      await this.redis.publish(
-        `${this.redisName}:requestAdded`,
-        JSON.stringify({
-          priority: config.priority || 1,
-          cost: config.cost || 1,
-          timestamp: Date.now(),
-          retries,
-          clientId: this.id,
-          requestId,
-        })
-      );
-    });
-  }
-
-  /**
-   * Adds the request to the queue and sets the priority, cost, and timestamp.
-   */
-  private async addToQueue(requestId: string, config: RequestConfig) {
-    const writePipeline = this.redis.pipeline();
-    writePipeline.sadd(`${this.redisName}:queue`, requestId);
-    writePipeline.hset(`${this.redisName}:queue:${requestId}`, {
-      priority: config.priority || 1,
-      cost: config.cost || 1,
-      timestamp: Date.now(),
-    });
-    writePipeline.expire(`${this.redisName}:queue:${requestId}`, 5);
-    await writePipeline.exec();
-  }
-
-  /**
-   * This method updates the role of the client.
-   *
-   * If the roles are the same, the method will return immediately.
-   *
-   * It will then clear the interval for adding tokens and update the role in the API Health Monitor.
-   *
-   * If the role is master and the rate limit is not noLimit, the method will add an interval and check for existing requests.
-   */
-
-  public async updateRole(role: ClientRole) {
-    if (role === this.role) return;
-    this.role = role;
-    if (this.interval) clearInterval(this.interval);
-    if (this.rateLimit.type === "noLimit") return;
-    if (this.createData.sharedRateLimitClientName) return;
-    if (this.role === "slave") {
-      await this.redisListener.unsubscribe(
-        `${this.redisName}:freezeRequests`,
-        `${this.redisName}:requestAdded`,
-        ...(this.rateLimit.type === "concurrencyLimit"
-          ? [`${this.redisName}:requestDone`]
-          : [])
-      );
-      return;
-    }
-    await this.redisListener.subscribe(
-      `${this.redisName}:freezeRequests`,
-      `${this.redisName}:requestAdded`,
-      ...(this.rateLimit.type === "concurrencyLimit"
-        ? [`${this.redisName}:requestDone`]
-        : [])
-    );
-    this.addInterval();
-    await this.checkExistingRequests();
-  }
-
-  /**
-   * This method checks for existing requests in the Redis queue and processes them.
-   *
-   * This is to catch any requests that were added while the client was a slave and were not processed by a previous master.
-   */
-
-  private async checkExistingRequests() {
-    const requests = await this.redis.smembers(`${this.redisName}:queue`);
-    for (const each of requests) {
-      const request = await this.redis.hgetall(
-        `${this.redisName}:queue:${each}`
-      );
-      if (!request.priority) {
-        await this.redis.srem(`${this.redisName}:queue`, each);
-      } else {
-        this.pendingRequests.set(each, {
-          priority: Number(request.priority),
-          timestamp: Number(request.timestamp),
-          cost: Number(request.cost),
-          retries: 0,
-          clientId: this.id,
-          requestId: each,
-        });
-        this.hasUnsortedRequests = true;
-      }
-    }
-    this.emitter.emit("processRequests");
-  }
-
-  /**
-   * This method sends a message to the freezeRequests channel in Redis to freeze the client for a specified amount of time.
-   */
-
-  public async freezeRequests(ms: number, isRateLimited: boolean) {
-    await this.redis.publish(
-      `${this.redisName}:freezeRequests`,
-      JSON.stringify({ ms, isRateLimited })
-    );
-  }
-
-  /**
-   * This method destroys the client by removing all keys associated with the client from Redis and clearing the interval for adding tokens to the client's bucket.
-   */
-
-  public async destroy() {
-    if (this.interval) clearInterval(this.interval);
-    const keys = await this.redis.keys(`${this.redisName}*`);
-    if (keys.length > 0) await this.redis.del(keys);
-    this.redisListener.off("message", this.handleRedisMessage.bind(this));
-    await this.redisListener.quit();
-    this.logger.info(`Client ${this.name} | Destroyed`);
   }
 }
