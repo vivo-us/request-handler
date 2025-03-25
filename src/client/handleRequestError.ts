@@ -1,83 +1,28 @@
 import { RequestDoneData, RequestRetryData } from "./types";
-import { AxiosError, AxiosResponse } from "axios";
-import BaseError from "../baseError";
+import { AxiosError } from "axios";
 import Request from "../request";
 import Client from ".";
 
-async function handleResponse(
+async function handleRequestError(
   this: Client,
   request: Request,
-  res: AxiosResponse | AxiosError | any
+  res: AxiosError | any
 ) {
-  const errorData = await getRequestErrorData.bind(this)(request, res);
+  const retryData = await handleRetry.bind(this)(request, res);
+  await handleLogError.bind(this)(request, res, retryData);
   const data: RequestDoneData = {
     cost: request.config.cost || 1,
-    status: errorData ? "failure" : "success",
+    status: "failure",
     requestId: request.id,
-    waitTime: errorData?.waitTime || 0,
-    isRateLimited: errorData?.isRateLimited || false,
+    waitTime: retryData.waitTime,
+    isRateLimited: retryData.isRateLimited,
   };
   await this.redis.publish(
     `${this.redisName}:requestDone`,
     JSON.stringify(data)
   );
-  if (errorData && !errorData.retry) {
-    throw new BaseError(
-      this.logger,
-      `Request ID: ${request.id} | ${errorData.message}`,
-      { error: generateErrorMetadata(res) }
-    );
-  }
-  if (!isResponse(res) || !this.rateLimitChange) return;
-  const newLimit = await this.rateLimitChange(this.rateLimit, res);
-  if (newLimit) await this.updateRateLimit(newLimit);
-  return res;
+  if (!retryData.retry) throw res;
 }
-
-function isError(res: AxiosResponse | AxiosError | any): res is AxiosError {
-  return res.isAxiosError;
-}
-
-/**
- * This method checks if the response is an AxiosResponse.
- */
-
-function isResponse(
-  res: AxiosResponse | AxiosError | any
-): res is AxiosResponse {
-  return res.data !== undefined && res.status !== undefined;
-}
-
-async function getRequestErrorData(
-  this: Client,
-  request: Request,
-  res: AxiosResponse | AxiosError | any
-) {
-  if (!isError(res)) return;
-  const data = await handleRetry.bind(this)(request, res);
-  const status = res.response?.status;
-  const shouldMute =
-    status && this.requestOptions?.httpStatusCodesToMute?.includes(status);
-  const logger = shouldMute ? this.logger.debug : this.logger.error;
-  const message = `Request ID: ${request.id} | Status: ${status} | Code: ${res.code} | ${data.message}`;
-  logger(message, { error: generateErrorMetadata(res) });
-  return data;
-}
-
-const generateErrorMetadata = (error: AxiosError) => {
-  return {
-    message: error.message,
-    stack: error.stack,
-    code: error.code,
-    config: error.config,
-    response: {
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      headers: error.response?.headers,
-      data: error.response?.data,
-    },
-  };
-};
 
 async function handleRetry(this: Client, request: Request, error: AxiosError) {
   const { retryOptions } = this.requestOptions;
@@ -134,4 +79,31 @@ function handleBackoff(this: Client, request: Request, data: RequestRetryData) {
   return data;
 }
 
-export default handleResponse;
+async function handleLogError(
+  this: Client,
+  request: Request,
+  res: AxiosError | any,
+  retryData: RequestRetryData
+) {
+  const status = res.response?.status;
+  const shouldMute =
+    status && this.requestOptions?.httpStatusCodesToMute?.includes(status);
+  const logger = shouldMute ? this.logger.debug : this.logger.error;
+  const message = `Request ID: ${request.id} | Status: ${status} | Code: ${res.code} | ${retryData.message}`;
+  logger(message, {
+    error: {
+      message: res.message,
+      stack: res.stack,
+      code: res.code,
+      config: res.config,
+      response: {
+        status: res.response?.status,
+        statusText: res.response?.statusText,
+        headers: res.response?.headers,
+        data: res.response?.data,
+      },
+    },
+  });
+}
+
+export default handleRequestError;
