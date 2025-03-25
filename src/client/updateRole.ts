@@ -36,6 +36,7 @@ async function updateRole(this: Client, role: ClientRole) {
   );
   this.addInterval();
   await checkExistingRequests.bind(this)();
+  this.emitter.emit("processRequests");
 }
 
 /**
@@ -62,7 +63,6 @@ async function checkExistingRequests(this: Client) {
       this.hasUnsortedRequests = true;
     }
   }
-  this.emitter.emit("processRequests");
 }
 
 export default updateRole;

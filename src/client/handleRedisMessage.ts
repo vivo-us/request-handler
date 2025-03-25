@@ -62,7 +62,6 @@ function handleRequestDone(this: Client, message: string) {
   if (data.requestId !== this.thawRequestId) return;
   if (data.status === "success") this.thawRequestCount--;
   this.thawRequestId = undefined;
-  this.emitter.emit("processRequests");
 }
 
 function handleFreezeRequests(this: Client, data: RequestDoneData) {
