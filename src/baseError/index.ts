@@ -25,7 +25,7 @@ export default class BaseError extends Error {
         : undefined,
     };
     logger.error(
-      `Error ${errorId}: ${this.message}${
+      `Error ${errorId} | ${this.message}${
         this.metaData?.context ? `\n - Context: ${this.metaData.context}` : ""
       }`,
       errMetadata

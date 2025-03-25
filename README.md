@@ -1,5 +1,7 @@
 # Request Handler
 
+**IMPORTANT: This package is currently under very active developement. Breaking changes may occur at any time.**
+
 Request Handler is a multi-node capable external API management package that simplifies the process of making requests to external APIs. It provides a centralized method of authenticating requests, handling rate limits, managing multiple clients, and retrying requests. Additionally, it takes the headache out of managing rate limits between multiple nodes by utilizing Redis to notify other nodes of rate limit usage.
 
 ## Table of Contents
@@ -243,6 +245,7 @@ const clientGenerator = () => {
   - `retry5xxs` *(optional)*: Whether or not to retry 5xx errors. Defaults to `true`.
   - `retryHandler` *(optional)*: A function that allows you to use custom logic to determine whether a request should be retried.
   - `retryStatusCodes` *(optional)*: An explicit list of HTTP status codes to retry
+  - `thawRequestCount` *(optional)*: The number of requests in a row that must come back with a 2xx status to start sending requests at full speed again after a rate limit has been breached. Defaults to `3`.
 - `defaults` *(optional)*: A set of optional default values to pass to each request made by the client.
   - `headers` *(optional)*: A set of headers to pass to each request made by the client.
   - `baseURL` *(optional)*: The base URL to use for each request made by the client.
