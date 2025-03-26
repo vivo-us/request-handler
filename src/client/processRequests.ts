@@ -21,7 +21,7 @@ async function processRequests(this: Client) {
       if (this.freezeTimeout || this.thawRequestId) break;
       this.tokens -= request.cost || 1;
       this.pendingRequests.delete(key);
-      const channel = `${this.redisName}:${request.clientId}:requestReady`;
+      const channel = `${this.requestHandlerRedisName}:requestReady`;
       if (this.thawRequestCount) this.thawRequestId = key;
       await this.redis.publish(channel, key);
       if (this.thawRequestCount) break;
@@ -65,9 +65,9 @@ function waitForTokens(this: Client, cost: number): Promise<boolean> {
     const listener = () => {
       if (this.tokens < cost) return;
       resolve(true);
-      this.emitter.off("tokensAdded", listener);
+      this.emitter.off(`${this.redisName}:tokensAdded`, listener);
     };
-    this.emitter.on("tokensAdded", listener);
+    this.emitter.on(`${this.redisName}:tokensAdded`, listener);
   });
 }
 

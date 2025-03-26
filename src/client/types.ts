@@ -1,6 +1,7 @@
 import { AxiosResponse, CreateAxiosDefaults } from "axios";
 import { AuthCreateData } from "../authenticator/types";
 import { RequestConfig } from "../request/types";
+import EventEmitter from "events";
 import { Logger } from "winston";
 import IORedis from "ioredis";
 
@@ -21,6 +22,7 @@ export interface ClientConstructorData {
   requestHandlerRedisName: string;
   logger: Logger;
   key: string;
+  emitter: EventEmitter;
 }
 
 export interface CreateClientData {
@@ -58,6 +60,11 @@ export interface CreateClientData {
   subClients?: CreateClientData[];
 }
 
+export interface RateLimitUpdatedData {
+  clientName: string;
+  rateLimit: RateLimitData;
+}
+
 export type RateLimitData =
   | RequestLimitClient
   | ConcurrencyLimitClient
@@ -87,7 +94,7 @@ export interface RequestMetadata {
   priority: number;
   timestamp: number;
   requestId: string;
-  clientId: string;
+  clientName: string;
   cost: number;
   retries: number;
 }
@@ -238,6 +245,7 @@ export interface RequestDoneData {
   cost: number;
   status: "success" | "failure";
   requestId: string;
+  clientName: string;
   waitTime: number;
   isRateLimited: boolean;
 }

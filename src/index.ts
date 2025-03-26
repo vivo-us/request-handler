@@ -3,6 +3,7 @@ import { RequestConfig } from "./request/types";
 import { AxiosResponse } from "axios";
 import defaultLogger from "./logger";
 import BaseError from "./baseError";
+import EventEmitter from "events";
 import initNode from "./initNode";
 import { Logger } from "winston";
 import Client from "./client";
@@ -29,6 +30,8 @@ export default class RequestHandler {
 
   protected keepNodeAliveInterval?: NodeJS.Timeout;
   protected roleCheckIntervalMs: number;
+
+  protected emitter: NodeJS.EventEmitter = new EventEmitter();
 
   protected key: string;
 

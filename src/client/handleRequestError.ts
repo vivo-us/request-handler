@@ -14,11 +14,12 @@ async function handleRequestError(
     cost: request.config.cost || 1,
     status: "failure",
     requestId: request.id,
+    clientName: this.name,
     waitTime: retryData.waitTime,
     isRateLimited: retryData.isRateLimited,
   };
   await this.redis.publish(
-    `${this.redisName}:requestDone`,
+    `${this.requestHandlerRedisName}:requestDone`,
     JSON.stringify(data)
   );
   if (!retryData.retry) throw res;

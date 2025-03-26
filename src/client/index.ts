@@ -1,11 +1,9 @@
-import handleRedisMessage from "./handleRedisMessage";
 import { Authenticator } from "../authenticator";
 import processRequests from "./processRequests";
 import axios, { AxiosInstance } from "axios";
 import handleRequest from "./handleRequest";
 import * as ClientTypes from "./types";
 import updateRole from "./updateRole";
-import EventEmitter from "events";
 import { Logger } from "winston";
 import IORedis from "ioredis";
 import { v4 } from "uuid";
@@ -22,13 +20,13 @@ export default class Client {
   protected id: string = v4();
   protected role: ClientTypes.ClientRole = "slave";
   protected redis: IORedis;
-  protected redisListener: IORedis;
+  protected requestHandlerRedisName: string;
   protected redisName: string;
   protected interval?: NodeJS.Timeout;
   protected hasUnsortedRequests: boolean = false;
   protected pendingRequests: Map<string, ClientTypes.RequestMetadata> =
     new Map();
-  protected emitter: NodeJS.EventEmitter = new EventEmitter();
+  protected emitter: NodeJS.EventEmitter;
   protected logger: Logger;
   protected tokens: number = 0;
   protected freezeTimeout?: NodeJS.Timeout;
@@ -40,12 +38,13 @@ export default class Client {
   public updateRole = updateRole.bind(this);
 
   constructor(data: ClientTypes.ClientConstructorData) {
+    this.emitter = data.emitter;
     this.http = axios.create(data.client.axiosOptions);
     this.logger = data.logger;
     this.redis = data.redis;
-    this.redisListener = data.redis.duplicate().setMaxListeners(4);
     this.name = data.client.name;
     this.createData = data.client;
+    this.requestHandlerRedisName = data.requestHandlerRedisName;
     this.redisName = `${data.requestHandlerRedisName}:${(
       data.client.sharedRateLimitClientName || data.client.name
     ).replaceAll(/ /g, "_")}`;
@@ -73,12 +72,10 @@ export default class Client {
 
   public async init() {
     await this.updateRateLimit(this.rateLimit);
-    await this.redisListener.subscribe(
-      `${this.redisName}:${this.id}:requestReady`,
-      `${this.redisName}:rateLimitUpdated`
+    this.emitter.on(
+      `${this.redisName}:processRequests`,
+      processRequests.bind(this)
     );
-    this.emitter.on("processRequests", processRequests.bind(this));
-    this.redisListener.on("message", handleRedisMessage.bind(this));
   }
 
   /**
@@ -89,9 +86,10 @@ export default class Client {
     if (this.interval) clearInterval(this.interval);
     const keys = await this.redis.keys(`${this.redisName}*`);
     if (keys.length > 0) await this.redis.del(keys);
-    this.emitter.off("processRequests", processRequests.bind(this));
-    this.redisListener.off("message", handleRedisMessage.bind(this));
-    await this.redisListener.quit();
+    this.emitter.off(
+      `${this.redisName}:processRequests`,
+      processRequests.bind(this)
+    );
     this.logger.info(`Client ${this.name} | Destroyed`);
   }
 
@@ -103,9 +101,13 @@ export default class Client {
 
   protected async updateRateLimit(data: ClientTypes.RateLimitData) {
     await this.redis.set(`${this.redisName}:rateLimit`, JSON.stringify(data));
+    const updatedData: ClientTypes.RateLimitUpdatedData = {
+      clientName: this.name,
+      rateLimit: data,
+    };
     await this.redis.publish(
-      `${this.redisName}:rateLimitUpdated`,
-      JSON.stringify(data)
+      `${this.requestHandlerRedisName}:rateLimitUpdated`,
+      JSON.stringify(updatedData)
     );
   }
 
@@ -155,7 +157,48 @@ export default class Client {
           : cost || 1;
       if (tokensToAdd + this.tokens > max) this.tokens = max;
       else this.tokens += tokensToAdd;
-      this.emitter.emit("tokensAdded", this.tokens);
+      this.emitter.emit(`${this.redisName}:tokensAdded`, this.tokens);
     }
+  }
+
+  public handleRateLimitUpdated(message: string) {
+    const data: ClientTypes.RateLimitUpdatedData = JSON.parse(message);
+    this.rateLimit = data.rateLimit;
+    this.createData = { ...this.createData, rateLimit: data.rateLimit };
+    if (this.role === "slave") return;
+    if (this.interval) clearInterval(this.interval);
+    this.addInterval();
+  }
+
+  public handleRequestAdded(message: string) {
+    if (this.role === "slave") return;
+    const request: ClientTypes.RequestMetadata = JSON.parse(message);
+    this.pendingRequests.set(request.requestId, request);
+    this.hasUnsortedRequests = true;
+    this.emitter.emit(`${this.redisName}:processRequests`);
+  }
+
+  public handleRequestDone(message: string) {
+    if (this.role === "slave") return;
+    const data: ClientTypes.RequestDoneData = JSON.parse(message);
+    if (data.waitTime) this.handleFreezeRequests(data);
+    if (this.rateLimit.type === "concurrencyLimit") this.addTokens(data.cost);
+    if (data.requestId !== this.thawRequestId) return;
+    if (data.status === "success") this.thawRequestCount--;
+    this.thawRequestId = undefined;
+  }
+
+  private handleFreezeRequests(data: ClientTypes.RequestDoneData) {
+    this.logger.debug(`Freezing requests for ${data.waitTime}ms...`);
+    if (this.rateLimit.type === "requestLimit") this.tokens = 0;
+    if (this.freezeTimeout) clearTimeout(this.freezeTimeout);
+    if (data.isRateLimited) {
+      this.thawRequestCount =
+        this.requestOptions.retryOptions?.thawRequestCount || 3;
+    }
+    this.freezeTimeout = setTimeout(() => {
+      this.freezeTimeout = undefined;
+      this.emitter.emit(`${this.redisName}:processRequests`);
+    }, data.waitTime);
   }
 }

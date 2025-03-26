@@ -17,20 +17,9 @@ async function updateRole(this: Client, role: ClientRole) {
   if (this.interval) clearInterval(this.interval);
   if (this.rateLimit.type === "noLimit") return;
   if (this.createData.sharedRateLimitClientName) return;
-  if (this.role === "slave") {
-    await this.redisListener.unsubscribe(
-      `${this.redisName}:requestAdded`,
-      `${this.redisName}:requestDone`
-    );
-    return;
-  }
-  await this.redisListener.subscribe(
-    `${this.redisName}:requestAdded`,
-    `${this.redisName}:requestDone`
-  );
   this.addInterval();
   await checkExistingRequests.bind(this)();
-  this.emitter.emit("processRequests");
+  this.emitter.emit(`${this.redisName}:processRequests`);
 }
 
 /**
@@ -51,7 +40,7 @@ async function checkExistingRequests(this: Client) {
         timestamp: Number(request.timestamp),
         cost: Number(request.cost),
         retries: 0,
-        clientId: this.id,
+        clientName: this.name,
         requestId: each,
       });
       this.hasUnsortedRequests = true;
