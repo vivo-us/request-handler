@@ -129,6 +129,7 @@ async function createClient(this: RequestHandler, data: CreateClientData) {
     requestHandlerRedisName: this.redisName,
     logger: this.logger,
     key: this.key,
+    emitter: this.emitter,
   });
   this.registeredClients.set(data.name, client);
   await client.init();

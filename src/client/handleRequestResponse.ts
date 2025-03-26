@@ -12,11 +12,12 @@ async function handleResponse(
     cost: request.config.cost || 1,
     status: "success",
     requestId: request.id,
+    clientName: this.name,
     waitTime: 0,
     isRateLimited: false,
   };
   await this.redis.publish(
-    `${this.redisName}:requestDone`,
+    `${this.requestHandlerRedisName}:requestDone`,
     JSON.stringify(data)
   );
   if (this.rateLimitChange) {

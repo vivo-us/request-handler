@@ -1,6 +1,11 @@
 import { RequestHandlerNode } from "../types";
 import createClients from "./createClients";
 import RequestHandler from "..";
+import {
+  RateLimitUpdatedData,
+  RequestDoneData,
+  RequestMetadata,
+} from "../client/types";
 
 /**
  * Initializes the request handler by:
@@ -28,7 +33,11 @@ async function startRedis(this: RequestHandler) {
   await this.redisListener.subscribe(
     `${this.redisName}:regenerateClients`,
     `${this.redisName}:destroyClient`,
-    `${this.redisName}:nodeUpdate`
+    `${this.redisName}:nodeUpdate`,
+    `${this.redisName}:requestAdded`,
+    `${this.redisName}:requestReady`,
+    `${this.redisName}:requestDone`,
+    `${this.redisName}:rateLimitUpdated`
   );
   this.redisListener.on("message", handleRedisMessage.bind(this));
 }
@@ -67,18 +76,45 @@ async function handleRedisMessage(
   channel: string,
   message: string
 ) {
-  if (channel === `${this.redisName}:nodeUpdate`) {
-    await getOwnedClients.bind(this)();
-  } else if (channel === `${this.redisName}:regenerateClients`) {
-    await createClients.bind(this)(JSON.parse(message));
-    await getOwnedClients.bind(this)();
-  } else if (channel === `${this.redisName}:destroyClient`) {
-    const data = JSON.parse(message);
-    const client = this.getClientIfExists(data.clientName);
-    if (!client) return;
-    await client.destroy();
-    this.registeredClients.delete(data.clientName);
-  } else return;
+  switch (channel) {
+    case `${this.redisName}:nodeUpdate`:
+      await getOwnedClients.bind(this)();
+      break;
+    case `${this.redisName}:regenerateClients`:
+      await createClients.bind(this)(JSON.parse(message));
+      await getOwnedClients.bind(this)();
+      break;
+    case `${this.redisName}:destroyClient`:
+      const data = JSON.parse(message);
+      const destroyClient = this.getClientIfExists(data.clientName);
+      if (!destroyClient) return;
+      await destroyClient.destroy();
+      this.registeredClients.delete(data.clientName);
+      break;
+    case `${this.redisName}:requestAdded`:
+      const metadata: RequestMetadata = JSON.parse(message);
+      const addedClient = await this.getClientIfExists(metadata.clientName);
+      if (!addedClient) return;
+      addedClient.handleRequestAdded(message);
+      break;
+    case `${this.redisName}:requestReady`:
+      this.emitter.emit(`requestReady:${message}`, message);
+      break;
+    case `${this.redisName}:requestDone`:
+      const doneData: RequestDoneData = JSON.parse(message);
+      const doneClient = await this.getClientIfExists(doneData.clientName);
+      if (!doneClient) return;
+      doneClient.handleRequestDone(message);
+      break;
+    case `${this.redisName}:rateLimitUpdated`:
+      const updatedData: RateLimitUpdatedData = JSON.parse(message);
+      const client = await this.getClientIfExists(updatedData.clientName);
+      if (!client) return;
+      client.handleRateLimitUpdated(message);
+      break;
+    default:
+      return;
+  }
 }
 
 /**

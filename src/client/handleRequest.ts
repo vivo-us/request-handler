@@ -112,13 +112,13 @@ async function waitForRequestReady(
       resolve(true);
     });
     await this.redis.publish(
-      `${this.redisName}:requestAdded`,
+      `${this.requestHandlerRedisName}:requestAdded`,
       JSON.stringify({
         priority: request.config.priority || 1,
         cost: request.config.cost || 1,
         timestamp: Date.now(),
         retries: request.retries,
-        clientId: this.id,
+        clientName: this.name,
         requestId: request.id,
       })
     );
