@@ -1,5 +1,6 @@
+import handleRequestResponse from "./handleRequestResponse";
+import handleRequestError from "./handleRequestError";
 import { RequestConfig } from "../request/types";
-import handleResponse from "./handleResponse";
 import { AxiosResponse } from "axios";
 import BaseError from "../baseError";
 import Request from "../request";
@@ -13,10 +14,10 @@ async function handleRequest(this: Client, config: RequestConfig) {
     try {
       res = await this.http.request(request.config);
     } catch (error: any) {
-      await handleResponse.bind(this)(request, error);
+      await handleRequestError.bind(this)(request, error);
       continue;
     }
-    await handleResponse.bind(this)(request, res);
+    await handleRequestResponse.bind(this)(request, res);
   } while (!res && request.retries <= request.maxRetries);
   return await handlePostResponse.bind(this)(request, res);
 }
