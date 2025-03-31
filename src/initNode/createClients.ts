@@ -101,7 +101,7 @@ function mergeChildParentClients(
  */
 
 async function resetClient(this: RequestHandler, clientName: string) {
-  const client = this.getClientIfExists(clientName);
+  const client = this.registeredClients.get(clientName);
   if (!client) return;
   await client.updateRole("slave");
   this.ownedClients.delete(clientName);
@@ -116,7 +116,7 @@ async function resetClient(this: RequestHandler, clientName: string) {
  * @param data The data to use to create the client
  */
 async function createClient(this: RequestHandler, data: CreateClientData) {
-  const existing = this.getClientIfExists(data.name);
+  const existing = this.registeredClients.get(data.name);
   if (existing) {
     throw new BaseError(
       this.logger,

@@ -19,6 +19,7 @@ async function initNode(this: RequestHandler) {
     this.roleCheckIntervalMs
   );
   this.isInitialized = true;
+  this.emitter.emit("nodeInitialized");
   this.logger.info(`Initialized request handler node with ID ${this.id}`);
 }
 
@@ -83,14 +84,14 @@ async function handleRedisMessage(
       break;
     case `${this.redisName}:destroyClient`:
       const data = JSON.parse(message);
-      const destroyClient = this.getClientIfExists(data.clientName);
+      const destroyClient = this.registeredClients.get(data.clientName);
       if (!destroyClient) return;
       await destroyClient.destroy();
       this.registeredClients.delete(data.clientName);
       break;
     case `${this.redisName}:requestAdded`:
       const metadata: RequestMetadata = JSON.parse(message);
-      const addedClient = await this.getClientIfExists(metadata.clientName);
+      const addedClient = await this.registeredClients.get(metadata.clientName);
       if (!addedClient) return;
       addedClient.handleRequestAdded(metadata);
       break;
@@ -99,13 +100,13 @@ async function handleRedisMessage(
       break;
     case `${this.redisName}:requestDone`:
       const doneData: RequestDoneData = JSON.parse(message);
-      const doneClient = await this.getClientIfExists(doneData.clientName);
+      const doneClient = await this.registeredClients.get(doneData.clientName);
       if (!doneClient) return;
       await doneClient.handleRequestDone(doneData);
       break;
     case `${this.redisName}:rateLimitUpdated`:
       const updatedData: RateLimitUpdatedData = JSON.parse(message);
-      const client = await this.getClientIfExists(updatedData.clientName);
+      const client = await this.registeredClients.get(updatedData.clientName);
       if (!client) return;
       await client.handleRateLimitUpdated(updatedData);
       break;

@@ -134,9 +134,10 @@ export default class Client {
    */
 
   protected startAddTokensInterval() {
-    if (this.rateLimit.type !== "requestLimit") return;
+    if (this.addTokensInterval) clearInterval(this.addTokensInterval);
+    if (this.rateLimit.type !== "requestLimit" || this.role === "slave") return;
     this.addTokensInterval = setInterval(
-      async () => this.addTokens(),
+      async () => await this.addTokens(),
       this.rateLimit.interval
     );
   }
