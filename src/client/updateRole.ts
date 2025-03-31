@@ -7,9 +7,9 @@ import Client from ".";
  *
  * Always clears the addTokensInterval and healthCheckInterval if they are running.
  *
- * If the client is a slave, no further action is taken.
+ * If the client is a worker, no further action is taken.
  *
- * If the client has the master role, it will take the following actions:
+ * If the client has the controller role, it will take the following actions:
  * - Start the addTokensInterval
  * - Start the health check interval
  * - Check for existing requests in the Redis queue
@@ -23,7 +23,7 @@ async function updateRole(this: Client, role: ClientRole) {
   this.role = role;
   if (this.addTokensInterval) clearInterval(this.addTokensInterval);
   if (this.healthCheckInterval) clearInterval(this.healthCheckInterval);
-  if (this.rateLimit.type === "noLimit" || this.role === "slave") return;
+  if (this.rateLimit.type === "noLimit" || this.role === "worker") return;
   if (this.createData.sharedRateLimitClientName) return;
   this.startAddTokensInterval();
   await startHealthCheckInterval.bind(this)();
@@ -36,15 +36,15 @@ async function updateRole(this: Client, role: ClientRole) {
  *
  * If there is already an interval running, it will be cleared.
  *
- * If the client is a slave, no further action is taken.
+ * If the client is a worker, no further action is taken.
  *
- * If the client is a master, the method will start an interval that runs every 60 seconds by default.
+ * If the client is a controller, the method will start an interval that runs every 60 seconds by default.
  *
  */
 
 async function startHealthCheckInterval(this: Client) {
   if (this.healthCheckInterval) clearInterval(this.healthCheckInterval);
-  if (this.role === "slave") return;
+  if (this.role === "worker") return;
   this.healthCheckInterval = setInterval(
     async () => await healthCheck.bind(this)(),
     this.createData.healthCheckIntervalMs || 60000
@@ -54,7 +54,7 @@ async function startHealthCheckInterval(this: Client) {
 /**
  * Ensures that the client is acting properly for its given role and rate limit type
  *
- * If the client is a slave, no action is taken.
+ * If the client is a worker, no action is taken.
  *
  * If the client is a noLimit client, no action is taken.
  *
@@ -67,7 +67,7 @@ async function startHealthCheckInterval(this: Client) {
  */
 
 async function healthCheck(this: Client) {
-  if (this.role === "slave") return;
+  if (this.role === "worker") return;
   if (this.rateLimit.type === "noLimit") return;
   if (this.rateLimit.type === "requestLimit" && !this.addTokensInterval) {
     this.logger.warn(
@@ -137,7 +137,7 @@ async function getRequests(
 /**
  * This method checks for existing requests in the Redis queue and processes them.
  *
- * This is to catch any requests that were added while the client was a slave and were not processed by a previous master.
+ * This is to catch any requests that were added while the client was a worker and were not processed by a previous controller.
  */
 
 async function checkExistingRequests(this: Client) {

@@ -103,7 +103,7 @@ function mergeChildParentClients(
 async function resetClient(this: RequestHandler, clientName: string) {
   const client = this.registeredClients.get(clientName);
   if (!client) return;
-  await client.updateRole("slave");
+  await client.updateRole("worker");
   this.ownedClients.delete(clientName);
   this.registeredClients.delete(clientName);
 }

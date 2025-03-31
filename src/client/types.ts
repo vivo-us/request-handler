@@ -5,7 +5,7 @@ import EventEmitter from "events";
 import { Logger } from "winston";
 import IORedis from "ioredis";
 
-export type ClientRole = "master" | "slave";
+export type ClientRole = "controller" | "worker";
 
 export type ClientGenerator = () =>
   | Promise<CreateClientData[]>

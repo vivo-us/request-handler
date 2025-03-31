@@ -20,7 +20,7 @@ export default class Client {
   protected rateLimitChange?: ClientTypes.RateLimitChange;
   protected http: AxiosInstance;
   protected id: string = v4();
-  protected role: ClientTypes.ClientRole = "slave";
+  protected role: ClientTypes.ClientRole = "worker";
   protected redis: IORedis;
   protected requestHandlerRedisName: string;
   protected redisName: string;
@@ -135,7 +135,9 @@ export default class Client {
 
   protected startAddTokensInterval() {
     if (this.addTokensInterval) clearInterval(this.addTokensInterval);
-    if (this.rateLimit.type !== "requestLimit" || this.role === "slave") return;
+    if (this.rateLimit.type !== "requestLimit" || this.role === "worker") {
+      return;
+    }
     this.addTokensInterval = setInterval(
       async () => await this.addTokens(),
       this.rateLimit.interval
@@ -178,19 +180,19 @@ export default class Client {
   public handleRateLimitUpdated(data: ClientTypes.RateLimitUpdatedData) {
     this.rateLimit = data.rateLimit;
     this.createData = { ...this.createData, rateLimit: data.rateLimit };
-    if (this.role === "slave") return;
+    if (this.role === "worker") return;
     this.startAddTokensInterval();
   }
 
   public handleRequestAdded(request: RequestMetadata) {
-    if (this.role === "slave") return;
+    if (this.role === "worker") return;
     this.requestsInQueue.set(request.requestId, request);
     this.hasUnsortedRequests = true;
     this.emitter.emit(`${this.redisName}:processRequests`);
   }
 
   public async handleRequestDone(data: RequestDoneData) {
-    if (this.role === "slave") return;
+    if (this.role === "worker") return;
     this.requestsInProgress.delete(data.requestId);
     if (data.waitTime) await this.handleFreezeRequests(data);
     if (this.rateLimit.type === "concurrencyLimit") {

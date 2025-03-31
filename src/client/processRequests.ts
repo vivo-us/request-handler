@@ -8,7 +8,7 @@ import Client from ".";
  */
 
 async function processRequests(this: Client) {
-  if (this.processingId || this.role === "slave") return;
+  if (this.processingId || this.role === "worker") return;
   const id = v4();
   this.processingId = id;
   try {
