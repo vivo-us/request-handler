@@ -3,24 +3,135 @@ import { ClientRole } from "./types";
 import Client from ".";
 
 /**
- * This method updates the role of the client.
+ * This method ensures that all proper actions are taken based on the role of the client.
  *
- * If the roles are the same, the method will return immediately.
+ * Always clears the addTokensInterval and healthCheckInterval if they are running.
  *
- * It will then clear the interval for adding tokens and update the role in the API Health Monitor.
+ * If the client is a slave, no further action is taken.
  *
- * If the role is master and the rate limit is not noLimit, the method will add an interval and check for existing requests.
+ * If the client has the master role, it will take the following actions:
+ * - Start the addTokensInterval
+ * - Start the health check interval
+ * - Check for existing requests in the Redis queue
+ * - Emit the processRequests event
+ *
+ *
  */
 
 async function updateRole(this: Client, role: ClientRole) {
   if (role === this.role) return;
   this.role = role;
   if (this.addTokensInterval) clearInterval(this.addTokensInterval);
-  if (this.rateLimit.type === "noLimit" || this.role == "slave") return;
+  if (this.healthCheckInterval) clearInterval(this.healthCheckInterval);
+  if (this.rateLimit.type === "noLimit" || this.role === "slave") return;
   if (this.createData.sharedRateLimitClientName) return;
   this.startAddTokensInterval();
+  await startHealthCheckInterval.bind(this)();
   await checkExistingRequests.bind(this)();
   this.emitter.emit(`${this.redisName}:processRequests`);
+}
+
+/**
+ * This method starts the health check interval for the client.
+ *
+ * If there is already an interval running, it will be cleared.
+ *
+ * If the client is a slave, no further action is taken.
+ *
+ * If the client is a master, the method will start an interval that runs every 60 seconds by default.
+ *
+ */
+
+async function startHealthCheckInterval(this: Client) {
+  if (this.healthCheckInterval) clearInterval(this.healthCheckInterval);
+  if (this.role === "slave") return;
+  this.healthCheckInterval = setInterval(
+    async () => await healthCheck.bind(this)(),
+    this.createData.healthCheckIntervalMs || 60000
+  );
+}
+
+/**
+ * Ensures that the client is acting properly for its given role and rate limit type
+ *
+ * If the client is a slave, no action is taken.
+ *
+ * If the client is a noLimit client, no action is taken.
+ *
+ * If the client is a requestLimit client, the addTokensInterval is started if it is not already running.
+ *
+ * If the client is a concurrencyLimit client, it checks the requests in progress and adds tokens if there are any behind.
+ *
+ * @param this The client instance
+ * @returns
+ */
+
+async function healthCheck(this: Client) {
+  if (this.role === "slave") return;
+  if (this.rateLimit.type === "noLimit") return;
+  if (this.rateLimit.type === "requestLimit" && !this.addTokensInterval) {
+    this.logger.warn(
+      `Starting missing addTokensInterval for client ${this.name}`
+    );
+    this.startAddTokensInterval();
+    return;
+  }
+  if (this.rateLimit.type === "concurrencyLimit") {
+    await getRequests.bind(this)(`queue`, this.requestsInQueue);
+    const inProgress = await getRequests.bind(this)(
+      `inProgress`,
+      this.requestsInProgress
+    );
+    const tokensBehind = this.maxTokens - this.tokens - inProgress.length;
+    if (tokensBehind > 0) await this.addTokens(tokensBehind);
+  }
+}
+
+/**
+ * Checks the requests in a given namespace to ensure they are still active. If not, it removes them from the Redis set and the provided map.
+ *
+ * A request stays active by the client continuing to reset the expriration time on the request until it is completed.
+ *
+ * A request may go inactive if the client crashes or is stopped before the client returns the request.
+ *
+ * @param this The client instance
+ * @param namespace The redis namespace to check
+ * @param map The requests map to check
+ * @returns
+ */
+
+async function getRequests(
+  this: Client,
+  namespace: string,
+  map: Map<string, RequestMetadata>
+) {
+  const keys = await this.redis.keys(`${this.redisName}:${namespace}:*`);
+  const requestIds = new Set(
+    keys.reduce((acc, k) => {
+      const last = k.split(":").pop();
+      if (last) acc.push(last);
+      return acc;
+    }, [] as string[])
+  );
+  const requests = await this.redis.smembers(`${this.redisName}:${namespace}`);
+  const pipeline = this.redis.pipeline();
+  const validRequests: string[] = [];
+  for (const each of requests) {
+    if (requestIds.has(each)) validRequests.push(each);
+    else {
+      pipeline.srem(`${this.redisName}:${namespace}`, each);
+      if (map.has(each)) map.delete(each);
+    }
+  }
+  if (pipeline.length) {
+    await pipeline.exec();
+    this.logger.warn(
+      `Removed ${
+        requests.length - validRequests.length
+      } invalid requests from Client ${this.name} namespace ${namespace}`
+    );
+  }
+  return validRequests;
 }
 
 /**

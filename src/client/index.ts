@@ -25,6 +25,7 @@ export default class Client {
   protected requestHandlerRedisName: string;
   protected redisName: string;
   protected addTokensInterval?: NodeJS.Timeout;
+  protected healthCheckInterval?: NodeJS.Timeout;
   protected hasUnsortedRequests: boolean = false;
   protected requestsInQueue: Map<string, RequestMetadata> = new Map();
   protected requestsInProgress: Map<string, RequestMetadata> = new Map();
@@ -118,6 +119,7 @@ export default class Client {
 
   public async destroy() {
     if (this.addTokensInterval) clearInterval(this.addTokensInterval);
+    if (this.healthCheckInterval) clearInterval(this.healthCheckInterval);
     const keys = await this.redis.keys(`${this.redisName}*`);
     if (keys.length > 0) await this.redis.del(keys);
     this.emitter.off(
@@ -213,5 +215,22 @@ export default class Client {
       if (this.rateLimit.type === "noLimit") return;
       this.emitter.emit(`${this.redisName}:processRequests`);
     }, data.waitTime);
+  }
+
+  public async getStats(): Promise<ClientTypes.ClientStatistics> {
+    const tokens = await this.redis.get(`${this.redisName}:tokens`);
+    const requestsInQueue = await this.redis.smembers(
+      `${this.redisName}:queue`
+    );
+    const requestsInProgress = await this.redis.smembers(
+      `${this.redisName}:inProgress`
+    );
+    return {
+      clientName: this.name,
+      tokens: tokens ? parseInt(tokens) : 0,
+      maxTokens: this.maxTokens,
+      requestsInQueue: requestsInQueue.length,
+      requestsInProgress: requestsInProgress.length,
+    };
   }
 }
