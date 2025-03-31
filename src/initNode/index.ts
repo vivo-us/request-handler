@@ -118,7 +118,7 @@ async function handleRedisMessage(
 /**
  * This method gets the clients owned by the node by comparing the list of registered clients with the list of clients registered before the node.
  *
- * Any clients that were registered before the node are set to "slave" and any clients that were registered on or after the node are set to "master".
+ * Any clients that were registered before the node are set to "worker" and any clients that were registered on or after the node are set to "controller".
  */
 
 async function getOwnedClients(this: RequestHandler) {
@@ -126,13 +126,13 @@ async function getOwnedClients(this: RequestHandler) {
   let hasChanged = false;
   for (const [name, client] of this.ownedClients) {
     if (!clientsBefore.includes(name)) continue;
-    await client.updateRole("slave");
+    await client.updateRole("worker");
     this.ownedClients.delete(name);
     hasChanged = true;
   }
   for (const [name, client] of this.registeredClients) {
     if (clientsBefore.includes(name) || this.ownedClients.has(name)) continue;
-    await client.updateRole("master");
+    await client.updateRole("controller");
     this.ownedClients.set(name, client);
     hasChanged = true;
   }
