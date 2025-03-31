@@ -1,4 +1,3 @@
-import { ClientGenerator, CreateClientData } from "./client/types";
 import { RequestConfig } from "./request/types";
 import { AxiosResponse } from "axios";
 import defaultLogger from "./logger";
@@ -13,6 +12,11 @@ import {
   RequestHandlerConstructorOptions,
   RequestHandlerNodeStatus,
 } from "./types";
+import {
+  ClientGenerator,
+  ClientStatistics,
+  CreateClientData,
+} from "./client/types";
 
 export default class RequestHandler {
   protected id: string;
@@ -175,5 +179,33 @@ export default class RequestHandler {
 
   protected getClientIfExists(clientName: string): Client | undefined {
     return this.registeredClients.get(clientName);
+  }
+
+  /**
+   * Returns the statistics for the client with the given name.
+   *
+   * If the client does not exist, an error is thrown.
+   *
+   * @param clientName The name of the client to get the statistics for
+   * @returns
+   */
+
+  public getClientStats(clientName: string) {
+    return this.getClient(clientName).getStats();
+  }
+
+  /**
+   * Returns the statistics for all clients known to the RequestHandler.
+   *
+   * @returns The statistics for all clients
+   */
+
+  public async getAllClientStats() {
+    const allClientStats: ClientStatistics[] = [];
+    for (const client of this.registeredClients.values()) {
+      const stats = await client.getStats();
+      allClientStats.push(stats);
+    }
+    return allClientStats;
   }
 }

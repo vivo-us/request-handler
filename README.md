@@ -138,6 +138,7 @@ All normal Axios [Request Config](https://axios-http.com/docs/req_config) option
 - `sharedRateLimitClientName` *(optional)*: The name of another client to share rate limits with.
 - `requestOptions` *(optional)*: A set of options to pass to each request made by the client. This is useful if there are common parameters that need to be passed to each request. See the [Request Options](#request-options) section for more information.
 - `httpStatusCodesToMute` *(optional)*: A list of HTTP status codes to not log as errors. By default, all 4xx and 5xx status codes are logged as errors.
+- `healthCheckIntervalMs` *(optional)*: How often to run health checks on the client, which ensures that tokens are being added and not being lost. Defaults to 60 seconds (60000 ms).
 - `retryOptions` *(optional)*: An object that contains options for retrying requests.
   - `maxRetries` *(optional)*: The maximum number of times to retry a request if it fails. Defaults to 3.
   - `retryBackoffBaseTime` *(optional)*: The base time in milliseconds that the retry backoff will calculate from. Defaults to 1000.

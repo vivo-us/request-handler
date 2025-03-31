@@ -48,6 +48,12 @@ export interface CreateClientData {
   retryOptions?: Partial<RetryOptions>;
   /** Any HTTP status code included in this array will result in a debug log rather than an error log */
   httpStatusCodesToMute?: number[];
+  /**
+   * How often to run health checks on the client
+   *
+   * **Default: 60000 ms (60 seconds)**
+   */
+  healthCheckIntervalMs?: number;
   /** Optional object for storing other data with the updater */
   metadata?: { [key: string]: any };
   /**
@@ -229,3 +235,11 @@ export type ResponseInterceptor = (
   config: RequestConfig,
   response: AxiosResponse
 ) => Promise<void> | void;
+
+export interface ClientStatistics {
+  clientName: string;
+  tokens: number;
+  maxTokens: number;
+  requestsInQueue: number;
+  requestsInProgress: number;
+}
