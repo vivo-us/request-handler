@@ -19,13 +19,16 @@ async function processRequests(this: Client) {
       const [key, request] = next;
       await waitForTokens.bind(this)(request.cost);
       if (this.freezeTimeout || this.thawRequestId) break;
-      this.tokens -= request.cost || 1;
-      this.pendingRequests.delete(key);
-      const channel = `${this.requestHandlerRedisName}:requestReady`;
+      this.tokens -= request.cost;
+      this.requestsInProgress.set(key, request);
+      this.requestsInQueue.delete(key);
       if (this.thawRequestCount) this.thawRequestId = key;
-      await this.redis.publish(channel, key);
+      await this.redis.publish(
+        `${this.requestHandlerRedisName}:requestReady`,
+        key
+      );
       if (this.thawRequestCount) break;
-    } while (this.pendingRequests.size > 0);
+    } while (this.requestsInQueue.size > 0);
     this.processingId = undefined;
   } catch (e) {
     this.processingId = undefined;
@@ -35,8 +38,8 @@ async function processRequests(this: Client) {
 
 function getNextRequest(this: Client) {
   if (this.hasUnsortedRequests) {
-    this.pendingRequests = new Map(
-      [...this.pendingRequests].sort(([aKey, aValue], [bKey, bValue]) => {
+    this.requestsInQueue = new Map(
+      [...this.requestsInQueue].sort(([aKey, aValue], [bKey, bValue]) => {
         if (aValue.priority === bValue.priority) {
           if (aValue.retries === bValue.retries) {
             if (aValue.timestamp === bValue.timestamp) {
@@ -48,7 +51,7 @@ function getNextRequest(this: Client) {
     );
     this.hasUnsortedRequests = false;
   }
-  return this.pendingRequests.entries().next().value;
+  return this.requestsInQueue.entries().next().value;
 }
 
 /**

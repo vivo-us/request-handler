@@ -1,11 +1,8 @@
+import { RequestMetadata, RequestDoneData } from "../request/types";
+import { RateLimitUpdatedData } from "../client/types";
 import { RequestHandlerNode } from "../types";
 import createClients from "./createClients";
 import RequestHandler from "..";
-import {
-  RateLimitUpdatedData,
-  RequestDoneData,
-  RequestMetadata,
-} from "../client/types";
 
 /**
  * Initializes the request handler by:
@@ -95,7 +92,7 @@ async function handleRedisMessage(
       const metadata: RequestMetadata = JSON.parse(message);
       const addedClient = await this.getClientIfExists(metadata.clientName);
       if (!addedClient) return;
-      addedClient.handleRequestAdded(message);
+      addedClient.handleRequestAdded(metadata);
       break;
     case `${this.redisName}:requestReady`:
       this.emitter.emit(`requestReady:${message}`, message);
@@ -104,13 +101,13 @@ async function handleRedisMessage(
       const doneData: RequestDoneData = JSON.parse(message);
       const doneClient = await this.getClientIfExists(doneData.clientName);
       if (!doneClient) return;
-      doneClient.handleRequestDone(message);
+      await doneClient.handleRequestDone(doneData);
       break;
     case `${this.redisName}:rateLimitUpdated`:
       const updatedData: RateLimitUpdatedData = JSON.parse(message);
       const client = await this.getClientIfExists(updatedData.clientName);
       if (!client) return;
-      client.handleRateLimitUpdated(message);
+      await client.handleRateLimitUpdated(updatedData);
       break;
     default:
       return;
