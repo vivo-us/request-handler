@@ -44,6 +44,10 @@ export interface CreateClientData {
   sharedRateLimitClientName?: string;
   /** Options to pass to each request */
   requestOptions?: RequestOptions;
+  /** Options to configure the retry behavior of the request handler. */
+  retryOptions?: Partial<RetryOptions>;
+  /** Any HTTP status code included in this array will result in a debug log rather than an error log */
+  httpStatusCodesToMute?: number[];
   /** Optional object for storing other data with the updater */
   metadata?: { [key: string]: any };
   /**
@@ -109,15 +113,9 @@ export interface RequestOptions {
   /** Metadata to carry with the request. It is up to the user to validate the metadata */
   metadata?: Record<string, any>;
   /**
-   * Options to configure the retry behavior of the request handler.
-   */
-  retryOptions?: Partial<RetryOptions>;
-  /**
    * Default values to set for each request
    */
   defaults?: RequestDefaults;
-  /** Any HTTP status code included in this array will result in a debug log rather than an error log */
-  httpStatusCodesToMute?: number[];
   /**
    * Allows the user to intercept the request before it is sent and manipulate it.
    *
@@ -184,13 +182,13 @@ export interface RetryOptions {
    */
   retryHandler?: RetryHandler;
   /** An array of status codes to retry on */
-  retryStatusCodes?: number[];
+  retryStatusCodes: number[];
   /**
    * The number of requests in a row must come back with a 2xx status to start sending requests at full speed again after a rate limit has been breached
    *
    * **Default value: 3**
    */
-  thawRequestCount?: number;
+  thawRequestCount: number;
 }
 
 export interface RequestDefaults {

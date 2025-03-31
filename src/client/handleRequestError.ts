@@ -26,10 +26,7 @@ async function handleRequestError(
 }
 
 async function handleRetry(this: Client, request: Request, error: AxiosError) {
-  const { retryOptions } = this.requestOptions;
-  const retry429s = retryOptions?.retry429s || true;
-  const retry5xxs = retryOptions?.retry5xxs || true;
-  const retryStatusCodes = retryOptions?.retryStatusCodes || [];
+  const { retry429s, retry5xxs, retryStatusCodes } = this.retryOptions;
   const retryableCodes = ["ECONNRESET", "ETIMEDOUT", "ECONNABORTED"];
   const status = error?.response?.status;
   const data: RequestRetryData = {
@@ -50,8 +47,8 @@ async function handleRetry(this: Client, request: Request, error: AxiosError) {
     data.message += "Client Wants Retry By Status";
   } else if (error.code && retryableCodes.includes(error.code)) {
     data.message += "Server Error";
-  } else if (retryOptions?.retryHandler) {
-    const retry = await retryOptions?.retryHandler(error);
+  } else if (this.retryOptions?.retryHandler) {
+    const retry = await this.retryOptions?.retryHandler(error);
     if (retry) data.message += "Client Wants Retry";
     else data.retry = false;
   } else data.retry = false;
@@ -67,9 +64,7 @@ async function handleRetry(this: Client, request: Request, error: AxiosError) {
  */
 
 function handleBackoff(this: Client, request: Request, data: RequestRetryData) {
-  const { retryOptions } = this.requestOptions;
-  const retryBackoffBaseTime = retryOptions?.retryBackoffBaseTime || 1000;
-  const retryBackoffMethod = retryOptions?.retryBackoffMethod || "exponential";
+  const { retryBackoffBaseTime, retryBackoffMethod } = this.retryOptions;
   const backoffBase =
     (this.rateLimit.type === "requestLimit" && this.rateLimit.interval) ||
     retryBackoffBaseTime;
@@ -87,8 +82,7 @@ async function handleLogError(
   retryData: RequestRetryData
 ) {
   const status = res.response?.status;
-  const shouldMute =
-    status && this.requestOptions?.httpStatusCodesToMute?.includes(status);
+  const shouldMute = status && this.httpStatusCodesToMute?.includes(status);
   const logger = shouldMute ? this.logger.debug : this.logger.error;
   const message = `Request ID: ${request.id} | Status: ${status} | Code: ${res.code} | ${retryData.message}`;
   logger(message, {
