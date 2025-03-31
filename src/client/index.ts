@@ -24,14 +24,16 @@ export default class Client {
   protected redis: IORedis;
   protected requestHandlerRedisName: string;
   protected redisName: string;
-  protected interval?: NodeJS.Timeout;
+  protected addTokensInterval?: NodeJS.Timeout;
   protected hasUnsortedRequests: boolean = false;
   protected requestsInQueue: Map<string, RequestMetadata> = new Map();
   protected requestsInProgress: Map<string, RequestMetadata> = new Map();
   protected httpStatusCodesToMute: number[];
   protected emitter: NodeJS.EventEmitter;
   protected logger: Logger;
-  protected tokens: number = 0;
+  protected tokens: number;
+  protected maxTokens: number;
+  protected tokensToAdd: number;
   protected freezeTimeout?: NodeJS.Timeout;
   protected thawRequestCount: number = 0;
   protected thawRequestId?: string;
@@ -52,11 +54,11 @@ export default class Client {
       data.client.sharedRateLimitClientName || data.client.name
     ).replaceAll(/ /g, "_")}`;
     this.rateLimit = data.client.rateLimit || { type: "noLimit" };
-    if (this.rateLimit.type === "concurrencyLimit") {
-      this.tokens = this.rateLimit.maxConcurrency;
-    } else if (this.rateLimit.type === "requestLimit") {
-      this.tokens = this.rateLimit.maxTokens;
-    }
+    if (this.rateLimit.type === "noLimit") this.maxTokens = Infinity;
+    else this.maxTokens = this.rateLimit.maxTokens;
+    if (this.rateLimit.type !== "requestLimit") this.tokensToAdd = 1;
+    else this.tokensToAdd = this.rateLimit.tokensToAdd;
+    this.tokens = this.maxTokens;
     this.metadata = data.client.metadata;
     this.requestOptions = data.client.requestOptions || {};
     this.rateLimitChange = data.client.rateLimitChange;
@@ -93,21 +95,6 @@ export default class Client {
   }
 
   /**
-   * This method destroys the client by removing all keys associated with the client from Redis and clearing the interval for adding tokens to the client's bucket.
-   */
-
-  public async destroy() {
-    if (this.interval) clearInterval(this.interval);
-    const keys = await this.redis.keys(`${this.redisName}*`);
-    if (keys.length > 0) await this.redis.del(keys);
-    this.emitter.off(
-      `${this.redisName}:processRequests`,
-      processRequests.bind(this)
-    );
-    this.logger.info(`Client ${this.name} | Destroyed`);
-  }
-
-  /**
    * Updates the rate limit data for the client in Redis and publishes the new rate limit data to the requestHandler so that other nodes can update their clients.
    *
    * @param data The new rate limit data
@@ -126,12 +113,27 @@ export default class Client {
   }
 
   /**
+   * This method destroys the client by removing all keys associated with the client from Redis and clearing the interval for adding tokens to the client's bucket.
+   */
+
+  public async destroy() {
+    if (this.addTokensInterval) clearInterval(this.addTokensInterval);
+    const keys = await this.redis.keys(`${this.redisName}*`);
+    if (keys.length > 0) await this.redis.del(keys);
+    this.emitter.off(
+      `${this.redisName}:processRequests`,
+      processRequests.bind(this)
+    );
+    this.logger.info(`Client ${this.name} | Destroyed`);
+  }
+
+  /**
    * Adds an interval to the Client so that tokens will be added to the Client's bucket as specified by the rate limit.
    */
 
-  protected addInterval() {
+  protected startAddTokensInterval() {
     if (this.rateLimit.type !== "requestLimit") return;
-    this.interval = setInterval(
+    this.addTokensInterval = setInterval(
       async () => this.addTokens(),
       this.rateLimit.interval
     );
@@ -154,33 +156,27 @@ export default class Client {
    *
    */
 
-  protected addTokens(cost?: number) {
+  protected async addTokens(cost?: number) {
     if (this.rateLimit.type === "noLimit") return;
     if (this.freezeTimeout && this.rateLimit.type === "requestLimit") return;
-    const max =
-      this.rateLimit.type === "requestLimit"
-        ? this.rateLimit.maxTokens
-        : this.rateLimit.maxConcurrency;
-    if (this.tokens < 0) this.tokens = 0;
-    else if (this.tokens > max) this.tokens = max;
-    else if (this.tokens === max) return;
+    if (this.tokens === this.maxTokens) return;
+    else if (this.tokens < 0) this.tokens = 0;
+    else if (this.tokens > this.maxTokens) this.tokens = this.maxTokens;
     else {
-      const tokensToAdd =
-        this.rateLimit.type === "requestLimit"
-          ? this.rateLimit.tokensToAdd
-          : cost || 1;
-      if (tokensToAdd + this.tokens > max) this.tokens = max;
-      else this.tokens += tokensToAdd;
+      const tokensToAdd = cost || this.tokensToAdd;
+      if (tokensToAdd + this.tokens > this.maxTokens) {
+        this.tokens = this.maxTokens;
+      } else this.tokens += tokensToAdd;
       this.emitter.emit(`${this.redisName}:tokensAdded`, this.tokens);
     }
+    await this.redis.set(`${this.redisName}:tokens`, this.tokens);
   }
 
   public handleRateLimitUpdated(data: ClientTypes.RateLimitUpdatedData) {
     this.rateLimit = data.rateLimit;
     this.createData = { ...this.createData, rateLimit: data.rateLimit };
     if (this.role === "slave") return;
-    if (this.interval) clearInterval(this.interval);
-    this.addInterval();
+    this.startAddTokensInterval();
   }
 
   public handleRequestAdded(request: RequestMetadata) {
@@ -194,7 +190,9 @@ export default class Client {
     if (this.role === "slave") return;
     this.requestsInProgress.delete(data.requestId);
     if (data.waitTime) await this.handleFreezeRequests(data);
-    if (this.rateLimit.type === "concurrencyLimit") this.addTokens(data.cost);
+    if (this.rateLimit.type === "concurrencyLimit") {
+      await this.addTokens(data.cost);
+    }
     if (data.requestId !== this.thawRequestId) return;
     if (data.status === "success") this.thawRequestCount--;
     this.thawRequestId = undefined;
@@ -202,7 +200,10 @@ export default class Client {
 
   private async handleFreezeRequests(data: RequestDoneData) {
     this.logger.debug(`Freezing requests for ${data.waitTime}ms...`);
-    if (this.rateLimit.type === "requestLimit") this.tokens = 0;
+    if (this.rateLimit.type === "requestLimit") {
+      this.tokens = 0;
+      await this.redis.set(`${this.redisName}:tokens`, 0);
+    }
     if (this.freezeTimeout) clearTimeout(this.freezeTimeout);
     if (data.isRateLimited) {
       this.thawRequestCount = this.retryOptions.thawRequestCount;

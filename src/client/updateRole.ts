@@ -15,10 +15,10 @@ import Client from ".";
 async function updateRole(this: Client, role: ClientRole) {
   if (role === this.role) return;
   this.role = role;
-  if (this.interval) clearInterval(this.interval);
-  if (this.rateLimit.type === "noLimit") return;
+  if (this.addTokensInterval) clearInterval(this.addTokensInterval);
+  if (this.rateLimit.type === "noLimit" || this.role == "slave") return;
   if (this.createData.sharedRateLimitClientName) return;
-  this.addInterval();
+  this.startAddTokensInterval();
   await checkExistingRequests.bind(this)();
   this.emitter.emit(`${this.redisName}:processRequests`);
 }
