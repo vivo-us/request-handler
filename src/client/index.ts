@@ -1,3 +1,4 @@
+import { RequestDoneData, RequestMetadata } from "../request/types";
 import { Authenticator } from "../authenticator";
 import processRequests from "./processRequests";
 import axios, { AxiosInstance } from "axios";
@@ -25,8 +26,8 @@ export default class Client {
   protected redisName: string;
   protected interval?: NodeJS.Timeout;
   protected hasUnsortedRequests: boolean = false;
-  protected pendingRequests: Map<string, ClientTypes.RequestMetadata> =
-    new Map();
+  protected requestsInQueue: Map<string, RequestMetadata> = new Map();
+  protected requestsInProgress: Map<string, RequestMetadata> = new Map();
   protected httpStatusCodesToMute: number[];
   protected emitter: NodeJS.EventEmitter;
   protected logger: Logger;
@@ -174,8 +175,7 @@ export default class Client {
     }
   }
 
-  public handleRateLimitUpdated(message: string) {
-    const data: ClientTypes.RateLimitUpdatedData = JSON.parse(message);
+  public handleRateLimitUpdated(data: ClientTypes.RateLimitUpdatedData) {
     this.rateLimit = data.rateLimit;
     this.createData = { ...this.createData, rateLimit: data.rateLimit };
     if (this.role === "slave") return;
@@ -183,25 +183,24 @@ export default class Client {
     this.addInterval();
   }
 
-  public handleRequestAdded(message: string) {
+  public handleRequestAdded(request: RequestMetadata) {
     if (this.role === "slave") return;
-    const request: ClientTypes.RequestMetadata = JSON.parse(message);
-    this.pendingRequests.set(request.requestId, request);
+    this.requestsInQueue.set(request.requestId, request);
     this.hasUnsortedRequests = true;
     this.emitter.emit(`${this.redisName}:processRequests`);
   }
 
-  public handleRequestDone(message: string) {
+  public async handleRequestDone(data: RequestDoneData) {
     if (this.role === "slave") return;
-    const data: ClientTypes.RequestDoneData = JSON.parse(message);
-    if (data.waitTime) this.handleFreezeRequests(data);
+    this.requestsInProgress.delete(data.requestId);
+    if (data.waitTime) await this.handleFreezeRequests(data);
     if (this.rateLimit.type === "concurrencyLimit") this.addTokens(data.cost);
     if (data.requestId !== this.thawRequestId) return;
     if (data.status === "success") this.thawRequestCount--;
     this.thawRequestId = undefined;
   }
 
-  private handleFreezeRequests(data: ClientTypes.RequestDoneData) {
+  private async handleFreezeRequests(data: RequestDoneData) {
     this.logger.debug(`Freezing requests for ${data.waitTime}ms...`);
     if (this.rateLimit.type === "requestLimit") this.tokens = 0;
     if (this.freezeTimeout) clearTimeout(this.freezeTimeout);
@@ -210,6 +209,7 @@ export default class Client {
     }
     this.freezeTimeout = setTimeout(() => {
       this.freezeTimeout = undefined;
+      if (this.rateLimit.type === "noLimit") return;
       this.emitter.emit(`${this.redisName}:processRequests`);
     }, data.waitTime);
   }

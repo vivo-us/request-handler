@@ -1,3 +1,4 @@
+import { RequestMetadata } from "../request/types";
 import { ClientRole } from "./types";
 import Client from ".";
 
@@ -31,18 +32,11 @@ async function updateRole(this: Client, role: ClientRole) {
 async function checkExistingRequests(this: Client) {
   const requests = await this.redis.smembers(`${this.redisName}:queue`);
   for (const each of requests) {
-    const request = await this.redis.hgetall(`${this.redisName}:queue:${each}`);
-    if (!request.priority) {
-      await this.redis.srem(`${this.redisName}:queue`, each);
-    } else {
-      this.pendingRequests.set(each, {
-        priority: Number(request.priority),
-        timestamp: Number(request.timestamp),
-        cost: Number(request.cost),
-        retries: 0,
-        clientName: this.name,
-        requestId: each,
-      });
+    const request = await this.redis.get(`${this.redisName}:queue:${each}`);
+    if (!request) await this.redis.srem(`${this.redisName}:queue`, each);
+    else {
+      const metadata: RequestMetadata = JSON.parse(request);
+      this.requestsInQueue.set(each, metadata);
       this.hasUnsortedRequests = true;
     }
   }

@@ -94,15 +94,6 @@ export interface ConcurrencyLimitClient {
   maxConcurrency: number;
 }
 
-export interface RequestMetadata {
-  priority: number;
-  timestamp: number;
-  requestId: string;
-  clientName: string;
-  cost: number;
-  retries: number;
-}
-
 export interface RequestOptions {
   /**
    * When cleaning up requests, how long until the request is counted as timed-out.
@@ -238,19 +229,3 @@ export type ResponseInterceptor = (
   config: RequestConfig,
   response: AxiosResponse
 ) => Promise<void> | void;
-
-export interface RequestDoneData {
-  cost: number;
-  status: "success" | "failure";
-  requestId: string;
-  clientName: string;
-  waitTime: number;
-  isRateLimited: boolean;
-}
-
-export interface RequestRetryData {
-  retry: boolean;
-  message: string;
-  isRateLimited: boolean;
-  waitTime: number;
-}
