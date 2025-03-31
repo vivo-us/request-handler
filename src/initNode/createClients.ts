@@ -87,10 +87,10 @@ function mergeChildParentClients(
         ...parent.requestOptions?.defaults,
         ...child.requestOptions?.defaults,
       },
-      retryOptions: {
-        ...parent.requestOptions?.retryOptions,
-        ...child.requestOptions?.retryOptions,
-      },
+    },
+    retryOptions: {
+      ...parent.retryOptions,
+      ...child.retryOptions,
     },
   };
   return merged;

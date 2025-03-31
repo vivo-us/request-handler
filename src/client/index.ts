@@ -15,6 +15,7 @@ export default class Client {
   public rateLimit: ClientTypes.RateLimitData;
   protected authenticator?: Authenticator;
   protected createData: ClientTypes.CreateClientData;
+  protected retryOptions: ClientTypes.RetryOptions;
   protected rateLimitChange?: ClientTypes.RateLimitChange;
   protected http: AxiosInstance;
   protected id: string = v4();
@@ -26,6 +27,7 @@ export default class Client {
   protected hasUnsortedRequests: boolean = false;
   protected pendingRequests: Map<string, ClientTypes.RequestMetadata> =
     new Map();
+  protected httpStatusCodesToMute: number[];
   protected emitter: NodeJS.EventEmitter;
   protected logger: Logger;
   protected tokens: number = 0;
@@ -57,6 +59,17 @@ export default class Client {
     this.metadata = data.client.metadata;
     this.requestOptions = data.client.requestOptions || {};
     this.rateLimitChange = data.client.rateLimitChange;
+    const { retryOptions } = data.client;
+    this.httpStatusCodesToMute = data.client.httpStatusCodesToMute || [];
+    this.retryOptions = {
+      retryBackoffBaseTime: retryOptions?.retryBackoffBaseTime || 1000,
+      retryBackoffMethod: retryOptions?.retryBackoffMethod || "exponential",
+      retry429s: retryOptions?.retry429s || true,
+      retry5xxs: retryOptions?.retry5xxs || true,
+      maxRetries: retryOptions?.maxRetries || 3,
+      retryStatusCodes: retryOptions?.retryStatusCodes || [],
+      thawRequestCount: retryOptions?.thawRequestCount || 3,
+    };
     if (!data.client.authentication) return;
     this.authenticator = new Authenticator(
       data.client.authentication,
@@ -193,8 +206,7 @@ export default class Client {
     if (this.rateLimit.type === "requestLimit") this.tokens = 0;
     if (this.freezeTimeout) clearTimeout(this.freezeTimeout);
     if (data.isRateLimited) {
-      this.thawRequestCount =
-        this.requestOptions.retryOptions?.thawRequestCount || 3;
+      this.thawRequestCount = this.retryOptions.thawRequestCount;
     }
     this.freezeTimeout = setTimeout(() => {
       this.freezeTimeout = undefined;

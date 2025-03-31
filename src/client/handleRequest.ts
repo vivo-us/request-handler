@@ -23,8 +23,7 @@ async function handleRequest(this: Client, config: RequestConfig) {
 }
 
 async function generateRequest(this: Client, config: RequestConfig) {
-  const maxRetries = this.requestOptions?.retryOptions?.maxRetries || 3;
-  const request = new Request(config, maxRetries);
+  const request = new Request(config, this.retryOptions.maxRetries);
   handleRequestDefaults.bind(this)(request);
   const { method, baseURL, url } = request.config;
   this.logger.debug(

@@ -137,6 +137,16 @@ All normal Axios [Request Config](https://axios-http.com/docs/req_config) option
 - `rateLimitChange` *(optional)*: A function that is called after each response is received to allow a check of whether the rate limit should be changed.
 - `sharedRateLimitClientName` *(optional)*: The name of another client to share rate limits with.
 - `requestOptions` *(optional)*: A set of options to pass to each request made by the client. This is useful if there are common parameters that need to be passed to each request. See the [Request Options](#request-options) section for more information.
+- `httpStatusCodesToMute` *(optional)*: A list of HTTP status codes to not log as errors. By default, all 4xx and 5xx status codes are logged as errors.
+- `retryOptions` *(optional)*: An object that contains options for retrying requests.
+  - `maxRetries` *(optional)*: The maximum number of times to retry a request if it fails. Defaults to 3.
+  - `retryBackoffBaseTime` *(optional)*: The base time in milliseconds that the retry backoff will calculate from. Defaults to 1000.
+  - `retryBackoffMethod` *(optional)*: The method to use for calculating how much time to wait between retry attempts. Options are `exponential` and `linear`. Defaults to `exponential`.
+  - `retry429s` *(optional)*: Whether or not to retry 429 errors. Defaults to `true`.
+  - `retry5xxs` *(optional)*: Whether or not to retry 5xx errors. Defaults to `true`.
+  - `retryHandler` *(optional)*: A function that allows you to use custom logic to determine whether a request should be retried.
+  - `retryStatusCodes` *(optional)*: An explicit list of HTTP status codes to retry
+  - `thawRequestCount` *(optional)*: The number of requests in a row that must come back with a 2xx status to start sending requests at full speed again after a rate limit has been breached. Defaults to `3`.
 - `metadata` *(optional)*: Any metadata you want to store with the client.
 - `axiosOptions` *(optional)*: Any Axios [Request Config](https://axios-http.com/docs/req_config) options you want to pass to the axios instance for this client.
 - `authentication` *(optional)*: An object to define how to authenticate requests. There are currently 4 types of authentication supported: `oauth2ClientCredentials`, `oauth2GrantType`, `token`, and `basic`. See the [Authentication Options](#authentication-options) section for more information.
@@ -237,20 +247,10 @@ const clientGenerator = () => {
 
 - `cleanupTimeout` *(optional)*: The number of milliseconds to wait before counting a request as timed out and to clean up the request.
 - `metadata` *(optional)*: A general object that can be used to store any metadata you want to pass to the request.
-- `retryOptions` *(optional)*: An object that contains options for retrying requests.
-  - `maxRetries` *(optional)*: The maximum number of times to retry a request if it fails. Defaults to 3.
-  - `retryBackoffBaseTime` *(optional)*: The base time in milliseconds that the retry backoff will calculate from. Defaults to 1000.
-  - `retryBackoffMethod` *(optional)*: The method to use for calculating how much time to wait between retry attempts. Options are `exponential` and `linear`. Defaults to `exponential`.
-  - `retry429s` *(optional)*: Whether or not to retry 429 errors. Defaults to `true`.
-  - `retry5xxs` *(optional)*: Whether or not to retry 5xx errors. Defaults to `true`.
-  - `retryHandler` *(optional)*: A function that allows you to use custom logic to determine whether a request should be retried.
-  - `retryStatusCodes` *(optional)*: An explicit list of HTTP status codes to retry
-  - `thawRequestCount` *(optional)*: The number of requests in a row that must come back with a 2xx status to start sending requests at full speed again after a rate limit has been breached. Defaults to `3`.
 - `defaults` *(optional)*: A set of optional default values to pass to each request made by the client.
   - `headers` *(optional)*: A set of headers to pass to each request made by the client.
   - `baseURL` *(optional)*: The base URL to use for each request made by the client.
   - `params` *(optional)*: A set of query parameters to pass to each request made by the client.
-- `httpStatusCodesToMute` *(optional)*: A list of HTTP status codes to not log as errors. By default, all 4xx and 5xx status codes are logged as errors.
 - `requestInterceptor` *(optional)*: A function that allows requests to be manipulated before they are sent. This is useful for authentcating, adding headers or other information to requests.
 - `responseInterceptor` *(optional)*: A function that allows responses to be read in a consistent way. This is useful for reading data from the response, such as rate limit information, or for logging the responses.
 
