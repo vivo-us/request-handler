@@ -91,7 +91,7 @@ export interface RequestLimitClient {
 export interface ConcurrencyLimitClient {
   type: "concurrencyLimit";
   /** Maximum number of concurrent requests allowed */
-  maxConcurrency: number;
+  maxTokens: number;
 }
 
 export interface RequestOptions {

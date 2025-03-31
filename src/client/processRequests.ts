@@ -20,6 +20,7 @@ async function processRequests(this: Client) {
       await waitForTokens.bind(this)(request.cost);
       if (this.freezeTimeout || this.thawRequestId) break;
       this.tokens -= request.cost;
+      await this.redis.set(`${this.redisName}:tokens`, this.tokens);
       this.requestsInProgress.set(key, request);
       this.requestsInQueue.delete(key);
       if (this.thawRequestCount) this.thawRequestId = key;
