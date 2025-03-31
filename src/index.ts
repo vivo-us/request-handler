@@ -79,9 +79,11 @@ export default class RequestHandler {
    */
   public async destroyNode() {
     if (!this.isInitialized) return;
-    await this.redis.srem(`${this.redisName}:nodes`, this.id);
-    await this.redis.del(`${this.redisName}:node:${this.id}`);
-    await this.redis.publish(`${this.redisName}:nodeUpdate`, "");
+    const pipeline = this.redis.pipeline();
+    pipeline.srem(`${this.redisName}:nodes`, this.id);
+    pipeline.del(`${this.redisName}:node:${this.id}`);
+    pipeline.publish(`${this.redisName}:nodeUpdate`, "");
+    await pipeline.exec();
     clearInterval(this.keepNodeAliveInterval);
     this.logger.warn(`Destroyed request handler node with ID ${this.id}`);
   }
@@ -119,12 +121,8 @@ export default class RequestHandler {
    */
   private waitUntilInitialized(this: RequestHandler): Promise<void> {
     return new Promise((resolve) => {
-      const interval = setInterval(() => {
-        if (this.isInitialized) {
-          clearInterval(interval);
-          resolve();
-        }
-      }, 100);
+      if (this.isInitialized) return resolve();
+      this.emitter.once("nodeInitialized", () => resolve());
     });
   }
 
@@ -162,23 +160,12 @@ export default class RequestHandler {
    * @param clientName The name of the client to get
    */
   protected getClient(clientName: string): Client {
-    const client = this.getClientIfExists(clientName);
+    const client = this.registeredClients.get(clientName);
     if (client) return client;
     throw new BaseError(
       this.logger,
       `Client with name ${clientName} does not exist.`
     );
-  }
-
-  /**
-   * Returns the client with the given name if it exists.
-   *
-   * @param clientName The name of the client to get
-   * @returns
-   */
-
-  protected getClientIfExists(clientName: string): Client | undefined {
-    return this.registeredClients.get(clientName);
   }
 
   /**
