@@ -85,6 +85,7 @@ export default class RequestHandler {
     pipeline.publish(`${this.redisName}:nodeUpdate`, "");
     await pipeline.exec();
     clearInterval(this.keepNodeAliveInterval);
+    this.keepNodeAliveInterval = undefined;
     this.logger.warn(`Destroyed request handler node with ID ${this.id}`);
   }
 

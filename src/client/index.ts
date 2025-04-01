@@ -118,8 +118,8 @@ export default class Client {
    */
 
   public async destroy() {
-    if (this.addTokensInterval) clearInterval(this.addTokensInterval);
-    if (this.healthCheckInterval) clearInterval(this.healthCheckInterval);
+    this.removeAddTokensInterval();
+    this.removeHealthCheckInterval();
     const keys = await this.redis.keys(`${this.redisName}*`);
     if (keys.length > 0) await this.redis.del(keys);
     this.emitter.off(
@@ -129,12 +129,24 @@ export default class Client {
     this.logger.info(`Client ${this.name} | Destroyed`);
   }
 
+  protected removeAddTokensInterval() {
+    if (!this.addTokensInterval) return;
+    clearInterval(this.addTokensInterval);
+    this.addTokensInterval = undefined;
+  }
+
+  protected removeHealthCheckInterval() {
+    if (!this.healthCheckInterval) return;
+    clearInterval(this.healthCheckInterval);
+    this.healthCheckInterval = undefined;
+  }
+
   /**
    * Adds an interval to the Client so that tokens will be added to the Client's bucket as specified by the rate limit.
    */
 
   protected startAddTokensInterval() {
-    if (this.addTokensInterval) clearInterval(this.addTokensInterval);
+    this.removeAddTokensInterval();
     if (this.rateLimit.type !== "requestLimit" || this.role === "worker") {
       return;
     }

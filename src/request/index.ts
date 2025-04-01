@@ -97,6 +97,7 @@ export default class Request {
     pipeline.del(`${this.clientRedisName}:queue:${this.id}`);
     await pipeline.exec();
     clearInterval(this.queueKeepAlive);
+    this.queueKeepAlive = undefined;
   }
 
   async addToInProgress() {
@@ -129,5 +130,6 @@ export default class Request {
     );
     await pipeline.exec();
     clearInterval(this.inProgressKeepAlive);
+    this.inProgressKeepAlive = undefined;
   }
 }
