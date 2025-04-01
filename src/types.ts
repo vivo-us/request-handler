@@ -48,3 +48,8 @@ export interface RequestHandlerNode {
   registeredClients: string[];
   ownedClients: string[];
 }
+
+export interface ClientStatsRequest {
+  clientName: string;
+  nodeId: string;
+}

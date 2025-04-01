@@ -23,12 +23,9 @@ async function handleRequest(this: Client, config: RequestConfig) {
 
 function generateRequest(this: Client, config: RequestConfig) {
   const request = new Request({
-    requestHandlerRedisName: this.requestHandlerRedisName,
     requestOptions: this.requestOptions,
     authenticator: this.authenticator,
-    clientRedisName: this.redisName,
     clientName: this.name,
-    redis: this.redis,
     config,
   });
   const { method, baseURL, url } = request.config;
@@ -39,17 +36,15 @@ function generateRequest(this: Client, config: RequestConfig) {
 }
 
 async function waitForRequestReady(this: Client, request: Request) {
-  if (this.rateLimit.type === "noLimit") {
-    await request.addToInProgress();
-    return;
-  }
+  if (this.rateLimit.type === "noLimit") return true;
   return new Promise(async (resolve) => {
-    this.emitter.once(`requestReady:${request.id}`, async (message) => {
-      await request.removeFromQueue();
-      await request.addToInProgress();
+    this.emitter.once(`requestReady:${request.id}`, async () => {
       resolve(true);
     });
-    await request.addToQueue();
+    await this.redis.publish(
+      `${this.requestHandlerRedisName}:requestAdded`,
+      JSON.stringify(request.metadata)
+    );
   });
 }
 
@@ -61,7 +56,10 @@ async function handleResponse(
   if (!res) {
     throw new BaseError(this.logger, "No response received for the request.");
   }
-  await request.removeFromInProgress();
+  await this.redis.publish(
+    `${this.requestHandlerRedisName}:requestDone`,
+    JSON.stringify(request.getRequestDoneData())
+  );
   await request.handleResponseInterceptor(res);
   if (this.rateLimitChange) {
     const newLimit = await this.rateLimitChange(this.rateLimit, res);
@@ -79,7 +77,10 @@ async function handleError(
   const retryData = await handleRetry.bind(this)(request, res);
   handleLogError.bind(this)(request, res, retryData);
   if (retryData.retry) return;
-  await request.removeFromInProgress(retryData);
+  await this.redis.publish(
+    `${this.requestHandlerRedisName}:requestDone`,
+    JSON.stringify(request.getRequestDoneData(retryData))
+  );
   throw res;
 }
 

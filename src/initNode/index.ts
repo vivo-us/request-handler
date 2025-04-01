@@ -1,6 +1,6 @@
+import { ClientStatistics, RateLimitUpdatedData } from "../client/types";
 import { RequestMetadata, RequestDoneData } from "../request/types";
-import { RateLimitUpdatedData } from "../client/types";
-import { RequestHandlerNode } from "../types";
+import { ClientStatsRequest, RequestHandlerNode } from "../types";
 import createClients from "./createClients";
 import RequestHandler from "..";
 
@@ -14,6 +14,7 @@ async function initNode(this: RequestHandler) {
   await createClients.bind(this)();
   await startRedis.bind(this)();
   await registerNode.bind(this)();
+  await getOwnedClients.bind(this)();
   setInterval(
     async () => await getOwnedClients.bind(this)(),
     this.roleCheckIntervalMs
@@ -32,6 +33,8 @@ async function startRedis(this: RequestHandler) {
     `${this.redisName}:regenerateClients`,
     `${this.redisName}:destroyClient`,
     `${this.redisName}:nodeUpdate`,
+    `${this.redisName}:clientStatsRequested`,
+    `${this.redisName}:clientStatsReady:${this.id}`,
     `${this.redisName}:requestAdded`,
     `${this.redisName}:requestReady`,
     `${this.redisName}:requestDone`,
@@ -52,7 +55,7 @@ async function registerNode(this: RequestHandler) {
   this.keepNodeAliveInterval = setInterval(async () => {
     await this.redis.expire(`${this.redisName}:node:${this.id}`, 4);
   }, 2000);
-  await this.redis.publish(`${this.redisName}:nodeUpdate`, "");
+  await this.redis.publish(`${this.redisName}:nodeUpdate`, this.id);
 }
 
 /**
@@ -76,6 +79,7 @@ async function handleRedisMessage(
 ) {
   switch (channel) {
     case `${this.redisName}:nodeUpdate`:
+      if (this.id === message) return;
       await getOwnedClients.bind(this)();
       break;
     case `${this.redisName}:regenerateClients`:
@@ -88,6 +92,23 @@ async function handleRedisMessage(
       if (!destroyClient) return;
       await destroyClient.destroy();
       this.registeredClients.delete(data.clientName);
+      break;
+    case `${this.redisName}:clientStatsRequested`:
+      const statsReq: ClientStatsRequest = JSON.parse(message);
+      const getStatsClient = this.registeredClients.get(statsReq.clientName);
+      if (!getStatsClient || getStatsClient.role === "worker") return;
+      const stats = await getStatsClient.getStats();
+      await this.redis.publish(
+        `${this.redisName}:clientStatsReady:${statsReq.nodeId}`,
+        JSON.stringify(stats)
+      );
+      break;
+    case `${this.redisName}:clientStatsReady:${this.id}`:
+      const statsData: ClientStatistics = JSON.parse(message);
+      this.emitter.emit(
+        `${this.redisName}:clientStatsReady:${statsData.clientName}`,
+        statsData
+      );
       break;
     case `${this.redisName}:requestAdded`:
       const metadata: RequestMetadata = JSON.parse(message);

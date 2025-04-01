@@ -9,6 +9,7 @@ import Client from "./client";
 import IORedis from "ioredis";
 import { v4 } from "uuid";
 import {
+  ClientStatsRequest,
   RequestHandlerConstructorOptions,
   RequestHandlerNodeStatus,
 } from "./types";
@@ -178,22 +179,26 @@ export default class RequestHandler {
    * @returns
    */
 
-  public getClientStats(clientName: string) {
-    return this.getClient(clientName).getStats();
+  public async getClientStats(clientName: string) {
+    return await this.fetchClientStats(clientName);
   }
 
-  /**
-   * Returns the statistics for all clients known to the RequestHandler.
-   *
-   * @returns The statistics for all clients
-   */
-
-  public async getAllClientStats() {
-    const allClientStats: ClientStatistics[] = [];
-    for (const client of this.registeredClients.values()) {
-      const stats = await client.getStats();
-      allClientStats.push(stats);
-    }
-    return allClientStats;
+  private async fetchClientStats(
+    clientName: string
+  ): Promise<ClientStatistics> {
+    return new Promise(async (resolve) => {
+      this.emitter.once(
+        `${this.redisName}:clientStatsReady:${clientName}`,
+        (data: ClientStatistics) => resolve(data)
+      );
+      const statsRequest: ClientStatsRequest = {
+        clientName,
+        nodeId: this.id,
+      };
+      await this.redis.publish(
+        `${this.redisName}:clientStatsRequested`,
+        JSON.stringify(statsRequest)
+      );
+    });
   }
 }

@@ -1,13 +1,9 @@
 import { AxiosRequestConfig, Method } from "axios";
 import { RequestOptions } from "../client/types";
 import { Authenticator } from "../authenticator";
-import IORedis from "ioredis";
 
 export interface RequestConstructorData {
-  requestHandlerRedisName: string;
   clientName: string;
-  clientRedisName: string;
-  redis: IORedis;
   config: RequestConfig;
   requestOptions?: RequestOptions;
   authenticator?: Authenticator;
