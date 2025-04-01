@@ -69,6 +69,11 @@ function startHealthCheckInterval(this: Client) {
 async function healthCheck(this: Client) {
   if (this.role === "worker") return;
   if (this.rateLimit.type === "noLimit") return;
+  await getRequests.bind(this)(`queue`, this.requestsInQueue);
+  const inProgress = await getRequests.bind(this)(
+    `inProgress`,
+    this.requestsInProgress
+  );
   if (this.rateLimit.type === "requestLimit" && !this.addTokensInterval) {
     this.logger.warn(
       `Starting missing addTokensInterval for client ${this.name}`
@@ -77,11 +82,6 @@ async function healthCheck(this: Client) {
     return;
   }
   if (this.rateLimit.type === "concurrencyLimit") {
-    await getRequests.bind(this)(`queue`, this.requestsInQueue);
-    const inProgress = await getRequests.bind(this)(
-      `inProgress`,
-      this.requestsInProgress
-    );
     const tokensBehind = this.maxTokens - this.tokens - inProgress.length;
     if (tokensBehind > 0) await this.addTokens(tokensBehind);
   }
