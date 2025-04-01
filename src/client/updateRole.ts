@@ -26,7 +26,7 @@ async function updateRole(this: Client, role: ClientRole) {
   if (this.rateLimit.type === "noLimit" || this.role === "worker") return;
   if (this.createData.sharedRateLimitClientName) return;
   this.startAddTokensInterval();
-  await startHealthCheckInterval.bind(this)();
+  startHealthCheckInterval.bind(this)();
   await checkExistingRequests.bind(this)();
   this.emitter.emit(`${this.redisName}:processRequests`);
 }
@@ -42,7 +42,7 @@ async function updateRole(this: Client, role: ClientRole) {
  *
  */
 
-async function startHealthCheckInterval(this: Client) {
+function startHealthCheckInterval(this: Client) {
   if (this.healthCheckInterval) clearInterval(this.healthCheckInterval);
   if (this.role === "worker") return;
   this.healthCheckInterval = setInterval(

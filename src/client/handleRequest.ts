@@ -77,7 +77,7 @@ async function handleError(
   res: AxiosError | any
 ) {
   const retryData = await handleRetry.bind(this)(request, res);
-  await handleLogError.bind(this)(request, res, retryData);
+  handleLogError.bind(this)(request, res, retryData);
   if (retryData.retry) return;
   await request.removeFromInProgress(retryData);
   throw res;
@@ -133,7 +133,7 @@ function handleBackoff(this: Client, request: Request, data: RequestRetryData) {
   return data;
 }
 
-async function handleLogError(
+function handleLogError(
   this: Client,
   request: Request,
   res: AxiosError | any,
