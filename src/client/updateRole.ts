@@ -105,30 +105,30 @@ async function getRequests(
   namespace: string,
   map: Map<string, RequestMetadata>
 ) {
-  const keys = await this.redis.keys(`${this.redisName}:${namespace}:*`);
-  const requestIds = new Set(
-    keys.reduce((acc, k) => {
-      const last = k.split(":").pop();
-      if (last) acc.push(last);
-      return acc;
-    }, [] as string[])
-  );
   const requests = await this.redis.smembers(`${this.redisName}:${namespace}`);
+  if (!requests.length) return [];
   const pipeline = this.redis.pipeline();
+  requests.forEach((r) => pipeline.get(`${this.redisName}:${namespace}:${r}`));
+  const keys = await pipeline.exec();
+  const indexesToRemove: number[] = [];
+  keys?.forEach(([err, res], i) => {
+    if (!res) indexesToRemove.push(i);
+  });
+  if (!indexesToRemove.length) return requests;
   const validRequests: string[] = [];
-  for (const each of requests) {
-    if (requestIds.has(each)) validRequests.push(each);
-    else {
-      pipeline.srem(`${this.redisName}:${namespace}`, each);
-      if (map.has(each)) map.delete(each);
+  const remPipeline = this.redis.pipeline();
+  requests.forEach((e, i) => {
+    if (!indexesToRemove.includes(i)) {
+      validRequests.push(e);
+      return;
     }
-  }
-  if (pipeline.length) {
-    await pipeline.exec();
+    remPipeline.srem(`${this.redisName}:${namespace}`, e);
+    if (map.has(e)) map.delete(e);
+  });
+  if (remPipeline.length) {
+    await remPipeline.exec();
     this.logger.warn(
-      `Removed ${
-        requests.length - validRequests.length
-      } invalid requests from Client ${this.name} namespace ${namespace}`
+      `Removed ${remPipeline.length} invalid requests from Client ${this.name} namespace ${namespace}`
     );
   }
   return validRequests;

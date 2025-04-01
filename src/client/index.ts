@@ -120,8 +120,6 @@ export default class Client {
   public async destroy() {
     this.removeAddTokensInterval();
     this.removeHealthCheckInterval();
-    const keys = await this.redis.keys(`${this.redisName}*`);
-    if (keys.length > 0) await this.redis.del(keys);
     this.emitter.off(
       `${this.redisName}:processRequests`,
       processRequests.bind(this)
