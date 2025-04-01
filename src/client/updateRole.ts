@@ -21,8 +21,8 @@ import Client from ".";
 async function updateRole(this: Client, role: ClientRole) {
   if (role === this.role) return;
   this.role = role;
-  if (this.addTokensInterval) clearInterval(this.addTokensInterval);
-  if (this.healthCheckInterval) clearInterval(this.healthCheckInterval);
+  this.removeAddTokensInterval();
+  this.removeHealthCheckInterval();
   if (this.rateLimit.type === "noLimit" || this.role === "worker") return;
   if (this.createData.sharedRateLimitClientName) return;
   this.startAddTokensInterval();
@@ -43,7 +43,7 @@ async function updateRole(this: Client, role: ClientRole) {
  */
 
 function startHealthCheckInterval(this: Client) {
-  if (this.healthCheckInterval) clearInterval(this.healthCheckInterval);
+  this.removeHealthCheckInterval();
   if (this.role === "worker") return;
   this.healthCheckInterval = setInterval(
     async () => await healthCheck.bind(this)(),
