@@ -211,7 +211,7 @@ Concurrency limitted clients allow you to limit the number of concurrent request
 
 Additional properties:
 
-- `maxConcurrent`: The maximum number of concurrent requests to allow.
+- `maxTokens`: The maximum number of concurrent requests to allow.
 
 ```js
 const clientGenerator = () => {
@@ -220,7 +220,7 @@ const clientGenerator = () => {
         name: "test",
         rateLimit: {
           type: "concurrencyLimit",
-          maxConcurrency: 10
+          maxTokens: 10
         }
       }
     ]
