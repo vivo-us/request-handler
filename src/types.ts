@@ -29,12 +29,6 @@ export interface RequestHandlerConstructorOptions {
    */
   defaultClientOptions?: CreateClientData;
   /**
-   * Interval at which to check for role changes in ms
-   *
-   * **Default value: 10000 ms**
-   */
-  roleCheckInterval?: number;
-  /**
    * The priority of the RequestHandler node (higher is better)
    */
   priority?: number;

@@ -9,8 +9,18 @@ async function handleRequest(this: Client, config: RequestConfig) {
   let res;
   do {
     await waitForRequestReady.bind(this)(request);
-    await request.handleRequestInterceptor();
-    await request.authenticate();
+    if (this.requestOptions.requestInterceptor) {
+      request.config = await this.requestOptions.requestInterceptor(
+        request.config
+      );
+    }
+    if (this.authenticator) {
+      const authHeader = await this.authenticator.authenticate(request.config);
+      request.config = {
+        ...request.config,
+        headers: { ...request.config.headers, ...authHeader },
+      };
+    }
     try {
       res = await this.http.request(request.config);
     } catch (error: any) {
@@ -24,18 +34,17 @@ async function handleRequest(this: Client, config: RequestConfig) {
 function generateRequest(this: Client, config: RequestConfig) {
   const request = new Request({
     requestOptions: this.requestOptions,
-    authenticator: this.authenticator,
     clientName: this.name,
     config,
   });
   const { method, baseURL, url } = request.config;
   this.logger.debug(
-    `Request ID: ${this.id} | ${method} | ${baseURL || ""}${url || ""}`
+    `Request ID: ${request.id} | ${method} | ${baseURL || ""}${url || ""}`
   );
   return request;
 }
 
-async function waitForRequestReady(this: Client, request: Request) {
+function waitForRequestReady(this: Client, request: Request) {
   if (this.rateLimit.type === "noLimit") return true;
   return new Promise(async (resolve) => {
     this.emitter.once(`requestReady:${request.id}`, async () => {
@@ -43,7 +52,7 @@ async function waitForRequestReady(this: Client, request: Request) {
     });
     await this.redis.publish(
       `${this.requestHandlerRedisName}:requestAdded`,
-      JSON.stringify(request.metadata)
+      JSON.stringify(request.getMetadata())
     );
   });
 }
@@ -60,7 +69,9 @@ async function handleResponse(
     `${this.requestHandlerRedisName}:requestDone`,
     JSON.stringify(request.getRequestDoneData())
   );
-  await request.handleResponseInterceptor(res);
+  if (this.requestOptions?.responseInterceptor) {
+    await this.requestOptions.responseInterceptor(request.config, res);
+  }
   if (this.rateLimitChange) {
     const newLimit = await this.rateLimitChange(this.rateLimit, res);
     if (newLimit) await this.updateRateLimit(newLimit);

@@ -46,7 +46,7 @@ async function generateClients(
       client.rateLimit = sharedClient.rateLimit;
     }
     if (parent) client = mergeChildParentClients.bind(this)(client, parent);
-    await resetClient.bind(this)(client.name);
+    resetClient.bind(this)(client.name);
     await createClient.bind(this)(client);
     if (client.subClients) {
       await generateClients.bind(this)(client.subClients, client);
@@ -100,12 +100,11 @@ function mergeChildParentClients(
  * This method resets the client with the given name so that a new client can take over.
  */
 
-async function resetClient(this: RequestHandler, clientName: string) {
-  const client = this.registeredClients.get(clientName);
+function resetClient(this: RequestHandler, clientName: string) {
+  const client = this.clients.get(clientName);
   if (!client) return;
-  await client.updateRole("worker");
-  this.ownedClients.delete(clientName);
-  this.registeredClients.delete(clientName);
+  client.updateRole("worker");
+  this.clients.delete(clientName);
 }
 
 /**
@@ -116,7 +115,7 @@ async function resetClient(this: RequestHandler, clientName: string) {
  * @param data The data to use to create the client
  */
 async function createClient(this: RequestHandler, data: CreateClientData) {
-  const existing = this.registeredClients.get(data.name);
+  const existing = this.clients.get(data.name);
   if (existing) {
     throw new BaseError(
       this.logger,
@@ -131,7 +130,7 @@ async function createClient(this: RequestHandler, data: CreateClientData) {
     key: this.key,
     emitter: this.emitter,
   });
-  this.registeredClients.set(data.name, client);
+  this.clients.set(data.name, client);
   await client.init();
 }
 

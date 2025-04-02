@@ -1,12 +1,10 @@
 import { AxiosRequestConfig, Method } from "axios";
 import { RequestOptions } from "../client/types";
-import { Authenticator } from "../authenticator";
 
 export interface RequestConstructorData {
   clientName: string;
   config: RequestConfig;
   requestOptions?: RequestOptions;
-  authenticator?: Authenticator;
 }
 
 export interface RequestConfig extends AxiosRequestConfig {
@@ -48,11 +46,8 @@ export interface RequestRetryData {
   waitTime: number;
 }
 
-export interface RequestDoneData {
-  cost: number;
+export interface RequestDoneData extends RequestMetadata {
   status: "success" | "failure";
-  requestId: string;
-  clientName: string;
   waitTime: number;
   isRateLimited: boolean;
 }

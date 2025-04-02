@@ -15,14 +15,37 @@ import Client from ".";
  *
  */
 
-async function updateRole(this: Client, role: ClientRole) {
+function updateRole(this: Client, role: ClientRole) {
   if (role === this.role) return;
   this.role = role;
   this.removeAddTokensInterval();
+  this.removeHealthCheckInterval();
   if (this.rateLimit.type === "noLimit" || this.role === "worker") return;
   if (this.createData.sharedRateLimitClientName) return;
   this.startAddTokensInterval();
+  startHealthCheckInterval.bind(this)();
   this.emitter.emit(`${this.redisName}:processRequests`);
+}
+
+function startHealthCheckInterval(this: Client) {
+  this.removeHealthCheckInterval();
+  if (this.role === "worker" || this.rateLimit.type === "noLimit") return;
+  if (this.createData.sharedRateLimitClientName) return;
+  this.healthCheckInterval = setInterval(() => {
+    healthCheck.call(this);
+  }, this.createData.healthCheckIntervalMs || 60000);
+}
+
+function healthCheck(this: Client) {
+  if (this.role === "worker" || this.rateLimit.type === "noLimit") return;
+  if (this.createData.sharedRateLimitClientName) return;
+  if (this.rateLimit.type === "requestLimit") {
+    if (!this.addTokensInterval) this.startAddTokensInterval();
+    return;
+  }
+  const tokensOffBy =
+    this.maxTokens - this.tokens - this.requestsInProgress.size;
+  if (tokensOffBy > 0) this.addTokens(tokensOffBy);
 }
 
 export default updateRole;

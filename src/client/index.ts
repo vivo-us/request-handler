@@ -25,6 +25,7 @@ export default class Client {
   protected requestHandlerRedisName: string;
   protected redisName: string;
   protected addTokensInterval?: NodeJS.Timeout;
+  protected healthCheckInterval?: NodeJS.Timeout;
   protected hasUnsortedRequests: boolean = false;
   protected requestsInQueue: Map<string, RequestMetadata> = new Map();
   protected requestsInProgress: Map<string, RequestMetadata> = new Map();
@@ -88,6 +89,7 @@ export default class Client {
 
   public async init() {
     await this.updateRateLimit(this.rateLimit);
+    if (this.createData.sharedRateLimitClientName) return;
     this.emitter.on(
       `${this.redisName}:processRequests`,
       processRequests.bind(this)
@@ -101,7 +103,6 @@ export default class Client {
    */
 
   protected async updateRateLimit(data: ClientTypes.RateLimitData) {
-    await this.redis.set(`${this.redisName}:rateLimit`, JSON.stringify(data));
     const updatedData: ClientTypes.RateLimitUpdatedData = {
       clientName: this.name,
       rateLimit: data,
@@ -116,8 +117,9 @@ export default class Client {
    * This method destroys the client by removing all keys associated with the client from Redis and clearing the interval for adding tokens to the client's bucket.
    */
 
-  public async destroy() {
+  public destroy() {
     this.removeAddTokensInterval();
+    this.removeHealthCheckInterval();
     this.emitter.off(
       `${this.redisName}:processRequests`,
       processRequests.bind(this)
@@ -146,6 +148,12 @@ export default class Client {
     );
   }
 
+  protected removeHealthCheckInterval() {
+    if (!this.healthCheckInterval) return;
+    clearInterval(this.healthCheckInterval);
+    this.healthCheckInterval = undefined;
+  }
+
   /**
    * Adds tokens to the client's bucket as specified by the rate limit.
    *
@@ -171,8 +179,17 @@ export default class Client {
     else if (this.tokens > this.maxTokens) this.tokens = this.maxTokens;
     else {
       const tokensToAdd = cost || this.tokensToAdd;
-      if (tokensToAdd + this.tokens > this.maxTokens) {
+      if (
+        this.rateLimit.type === "requestLimit" &&
+        tokensToAdd + this.tokens > this.maxTokens
+      ) {
         this.tokens = this.maxTokens;
+      } else if (
+        this.rateLimit.type === "concurrencyLimit" &&
+        tokensToAdd + this.tokens + this.requestsInProgress.size >
+          this.maxTokens
+      ) {
+        this.tokens = this.maxTokens - this.requestsInProgress.size;
       } else this.tokens += tokensToAdd;
       this.emitter.emit(`${this.redisName}:tokensAdded`, this.tokens);
     }
@@ -186,23 +203,32 @@ export default class Client {
   }
 
   public handleRequestAdded(request: RequestMetadata) {
-    if (this.role === "worker") return;
     this.requestsInQueue.set(request.requestId, request);
     this.hasUnsortedRequests = true;
+    if (this.role === "worker") return;
     this.emitter.emit(`${this.redisName}:processRequests`);
   }
 
-  public async handleRequestDone(data: RequestDoneData) {
-    if (this.role === "worker") return;
+  public handleRequestReady(request: RequestMetadata) {
+    const req = this.requestsInQueue.get(request.requestId);
+    if (req) {
+      this.requestsInProgress.set(request.requestId, req);
+      this.requestsInQueue.delete(request.requestId);
+    }
+    this.emitter.emit(`requestReady:${request.requestId}`, request);
+  }
+
+  public handleRequestDone(data: RequestDoneData) {
     this.requestsInProgress.delete(data.requestId);
-    if (data.waitTime) await this.handleFreezeRequests(data);
+    if (this.role === "worker") return;
     if (this.rateLimit.type === "concurrencyLimit") this.addTokens(data.cost);
+    if (data.waitTime) this.handleFreezeRequests(data);
     if (data.requestId !== this.thawRequestId) return;
     if (data.status === "success") this.thawRequestCount--;
     this.thawRequestId = undefined;
   }
 
-  private async handleFreezeRequests(data: RequestDoneData) {
+  private handleFreezeRequests(data: RequestDoneData) {
     this.logger.debug(`Freezing requests for ${data.waitTime}ms...`);
     if (this.rateLimit.type === "requestLimit") this.tokens = 0;
     if (this.freezeTimeout) clearTimeout(this.freezeTimeout);
@@ -216,7 +242,7 @@ export default class Client {
     }, data.waitTime);
   }
 
-  public async getStats(): Promise<ClientTypes.ClientStatistics> {
+  public getStats(): ClientTypes.ClientStatistics {
     return {
       clientName: this.name,
       tokens: this.tokens,
