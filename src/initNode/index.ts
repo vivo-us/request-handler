@@ -2,7 +2,6 @@ import createClients from "./createClients";
 import startRedis from "./startRedis";
 import RequestHandler from "..";
 import {
-  getNodeData,
   updateClientRoles,
   updateNodeRegistration,
   updateNodesMap,
@@ -23,7 +22,7 @@ async function initNode(this: RequestHandler) {
   await updateClientRoles.bind(this)(false);
   await this.redis.publish(
     `${this.redisName}:nodeAdded`,
-    JSON.stringify(getNodeData.bind(this)())
+    JSON.stringify(this.getMetadata())
   );
   this.isInitialized = true;
   this.emitter.emit("nodeInitialized");

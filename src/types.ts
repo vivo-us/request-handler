@@ -2,15 +2,6 @@ import { ClientGenerator, CreateClientData } from "./client/types";
 import { Logger } from "winston";
 import IORedis from "ioredis";
 
-export interface RequestHandlerNodeStatus {
-  /** The ID of the RequestHandler node (UUID v4)*/
-  id: string;
-  /** Whether or not the RequestHandler node is initialized */
-  initialized: boolean;
-  /** The clients owned by the node */
-  ownedClients: string[];
-}
-
 export interface RequestHandlerConstructorOptions {
   /** The key to use when encrypting sensitive information */
   key: string;
@@ -36,8 +27,9 @@ export interface RequestHandlerConstructorOptions {
   logger?: Logger;
 }
 
-export interface RequestHandlerNode {
+export interface RequestHandlerMetadata {
   id: string;
+  isInitialized: boolean;
   priority: number;
   registeredClients: string[];
   ownedClients: string[];

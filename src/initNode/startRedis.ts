@@ -1,6 +1,6 @@
 import { ClientStatistics, RateLimitUpdatedData } from "../client/types";
+import { ClientStatsRequest, RequestHandlerMetadata } from "../types";
 import { RequestDoneData, RequestMetadata } from "../request/types";
-import { ClientStatsRequest, RequestHandlerNode } from "../types";
 import { updateClientRoles, updateNodesMap } from "./helpers";
 import createClients from "./createClients";
 import RequestHandler from "..";
@@ -81,14 +81,14 @@ async function handleRedisMessage(
 }
 
 async function handleNodeAdded(this: RequestHandler, message: string) {
-  const nodeData: RequestHandlerNode = JSON.parse(message);
-  this.nodes.set(nodeData.id, nodeData);
+  const nodeData: RequestHandlerMetadata = JSON.parse(message);
+  this.requestHandlers.set(nodeData.id, nodeData);
   await updateClientRoles.bind(this)();
 }
 
 async function handleNodeUpdated(this: RequestHandler, message: string) {
-  const nodeData: RequestHandlerNode = JSON.parse(message);
-  this.nodes.set(nodeData.id, nodeData);
+  const nodeData: RequestHandlerMetadata = JSON.parse(message);
+  this.requestHandlers.set(nodeData.id, nodeData);
   await updateClientRoles.bind(this)();
 }
 
@@ -101,7 +101,7 @@ function handleNodeHeartbeat(this: RequestHandler, message: string) {
     setTimeout(async () => {
       this.logger.warn(`Node ${message} has not sent a heartbeat in 3 seconds`);
       this.nodeHeartbeatTimeouts.delete(message);
-      this.nodes.delete(message);
+      this.requestHandlers.delete(message);
       await updateNodesMap.bind(this)();
       await updateClientRoles.bind(this)();
     }, 3000)
@@ -109,7 +109,7 @@ function handleNodeHeartbeat(this: RequestHandler, message: string) {
 }
 
 async function handleNodeRemoved(this: RequestHandler, message: string) {
-  this.nodes.delete(message);
+  this.requestHandlers.delete(message);
   await updateClientRoles.bind(this)();
 }
 

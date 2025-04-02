@@ -11,8 +11,7 @@ import { v4 } from "uuid";
 import {
   ClientStatsRequest,
   RequestHandlerConstructorOptions,
-  RequestHandlerNode,
-  RequestHandlerNodeStatus,
+  RequestHandlerMetadata,
 } from "./types";
 import {
   ClientGenerator,
@@ -28,7 +27,7 @@ export default class RequestHandler {
   protected redisName: string;
   protected redisListener: IORedis;
   protected logger: Logger;
-  protected nodes: Map<string, RequestHandlerNode> = new Map();
+  protected requestHandlers: Map<string, RequestHandlerMetadata> = new Map();
   protected nodeHeartbeatTimeouts: Map<string, NodeJS.Timeout> = new Map();
   protected nodeHeartbeatInterval?: NodeJS.Timeout;
   protected emitter: NodeJS.EventEmitter = new EventEmitter();
@@ -88,22 +87,17 @@ export default class RequestHandler {
     this.logger.warn(`Destroyed request handler node with ID ${this.id}`);
   }
 
-  /**
-   * Returns the status of the request handler. This includes:
-   * - id: The ID of the node
-   * - ownedClients: The names of the clients owned by the node
-   * - initialized: Whether the node has been initialized
-   */
-
-  public getNodeStatus(): RequestHandlerNodeStatus {
+  public getMetadata(this: RequestHandler): RequestHandlerMetadata {
     const ownedClients: string[] = [];
     this.clients.forEach((client) => {
       if (client.role === "controller") ownedClients.push(client.name);
     });
     return {
       id: this.id,
+      isInitialized: this.isInitialized,
+      priority: this.priority,
+      registeredClients: Array.from(this.clients.keys()),
       ownedClients,
-      initialized: this.isInitialized,
     };
   }
 

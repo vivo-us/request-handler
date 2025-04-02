@@ -1,18 +1,4 @@
-import { RequestHandlerNode } from "../types";
 import RequestHandler from "..";
-
-export function getNodeData(this: RequestHandler): RequestHandlerNode {
-  const ownedClients: string[] = [];
-  this.clients.forEach((client) => {
-    if (client.role === "controller") ownedClients.push(client.name);
-  });
-  return {
-    id: this.id,
-    priority: this.priority,
-    registeredClients: Array.from(this.clients.keys()),
-    ownedClients,
-  };
-}
 
 /**
  * This method gets the clients owned by the node by comparing the list of registered clients with the list of clients registered before the node.
@@ -41,7 +27,7 @@ export async function updateClientRoles(
  */
 
 function getClientsBeforeNode(this: RequestHandler) {
-  const nodes = Array.from(this.nodes.values());
+  const nodes = Array.from(this.requestHandlers.values());
   const sorted = nodes.sort((a, b) => {
     if (a.priority > b.priority) return -1;
     else if (a.priority < b.priority) return 1;
@@ -63,8 +49,8 @@ export async function updateNodeRegistration(
   this: RequestHandler,
   hasChanges: boolean
 ) {
-  const nodeData = getNodeData.bind(this)();
-  this.nodes.set(this.id, nodeData);
+  const nodeData = this.getMetadata();
+  this.requestHandlers.set(this.id, nodeData);
   const pipeline = this.redis.pipeline();
   pipeline.set(`${this.redisName}:node:${this.id}`, JSON.stringify(nodeData));
   pipeline.expire(`${this.redisName}:node:${this.id}`, 3);
@@ -98,6 +84,6 @@ export async function updateNodesMap(this: RequestHandler) {
       await this.redis.srem(`${this.redisName}:nodes`, id);
       continue;
     }
-    this.nodes.set(id, JSON.parse(data));
+    this.requestHandlers.set(id, JSON.parse(data));
   }
 }
