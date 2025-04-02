@@ -111,6 +111,9 @@ function handleNodeHeartbeat(this: RequestHandler, message: string) {
 
 async function handleNodeRemoved(this: RequestHandler, message: string) {
   this.requestHandlers.delete(message);
+  const timeout = this.nodeHeartbeatTimeouts.get(message);
+  if (timeout) clearTimeout(timeout);
+  this.nodeHeartbeatTimeouts.delete(message);
   await updateClientRoles.bind(this)();
 }
 
