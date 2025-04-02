@@ -226,6 +226,7 @@ export default class Client {
     if (data.requestId !== this.thawRequestId) return;
     if (data.status === "success") this.thawRequestCount--;
     this.thawRequestId = undefined;
+    this.emitter.emit(`${this.redisName}:processRequests`);
   }
 
   private handleFreezeRequests(data: RequestDoneData) {

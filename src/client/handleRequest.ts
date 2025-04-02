@@ -83,11 +83,11 @@ async function handleError(
 ) {
   const retryData = await handleRetry.bind(this)(request, res);
   handleLogError.bind(this)(request, res, retryData);
-  if (retryData.retry) return;
   await this.redis.publish(
     `${this.requestHandlerRedisName}:requestDone`,
     JSON.stringify(request.getRequestDoneData(retryData))
   );
+  if (retryData.retry) return;
   throw res;
 }
 
