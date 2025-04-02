@@ -42,6 +42,7 @@ export default class Client {
 
   public handleRequest = handleRequest.bind(this);
   public updateRole = updateRole.bind(this);
+  private processRequests = processRequests.bind(this);
 
   constructor(data: ClientTypes.ClientConstructorData) {
     this.emitter = data.emitter;
@@ -90,10 +91,6 @@ export default class Client {
   public async init() {
     await this.updateRateLimit(this.rateLimit);
     if (this.createData.sharedRateLimitClientName) return;
-    this.emitter.on(
-      `${this.redisName}:processRequests`,
-      processRequests.bind(this)
-    );
   }
 
   /**
@@ -120,10 +117,6 @@ export default class Client {
   public destroy() {
     this.removeAddTokensInterval();
     this.removeHealthCheckInterval();
-    this.emitter.off(
-      `${this.redisName}:processRequests`,
-      processRequests.bind(this)
-    );
     this.logger.info(`Client ${this.name} | Destroyed`);
   }
 
@@ -206,7 +199,7 @@ export default class Client {
     this.requestsInQueue.set(request.requestId, request);
     this.hasUnsortedRequests = true;
     if (this.role === "worker") return;
-    this.emitter.emit(`${this.redisName}:processRequests`);
+    this.processRequests();
   }
 
   public handleRequestReady(request: RequestMetadata) {
@@ -226,7 +219,7 @@ export default class Client {
     if (data.requestId !== this.thawRequestId) return;
     if (data.status === "success") this.thawRequestCount--;
     this.thawRequestId = undefined;
-    this.emitter.emit(`${this.redisName}:processRequests`);
+    this.processRequests();
   }
 
   private handleFreezeRequests(data: RequestDoneData) {
@@ -239,7 +232,7 @@ export default class Client {
     this.freezeTimeout = setTimeout(() => {
       this.freezeTimeout = undefined;
       if (this.rateLimit.type === "noLimit") return;
-      this.emitter.emit(`${this.redisName}:processRequests`);
+      this.processRequests();
     }, data.waitTime);
   }
 
