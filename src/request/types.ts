@@ -1,11 +1,4 @@
 import { AxiosRequestConfig, Method } from "axios";
-import { RequestOptions } from "../client/types";
-
-export interface RequestConstructorData {
-  clientName: string;
-  config: RequestConfig;
-  requestOptions?: RequestOptions;
-}
 
 export interface RequestConfig extends AxiosRequestConfig {
   clientName: "default" | string;

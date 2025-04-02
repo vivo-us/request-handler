@@ -32,11 +32,7 @@ async function handleRequest(this: Client, config: RequestConfig) {
 }
 
 function generateRequest(this: Client, config: RequestConfig) {
-  const request = new Request({
-    requestOptions: this.requestOptions,
-    clientName: this.name,
-    config,
-  });
+  const request = new Request(this.name, config, this.requestOptions);
   const { method, baseURL, url } = request.config;
   this.logger.debug(
     `Request ID: ${request.id} | ${method} | ${baseURL || ""}${url || ""}`

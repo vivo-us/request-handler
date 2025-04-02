@@ -1,3 +1,4 @@
+import { RequestOptions } from "../client/types";
 import * as RequestTypes from "./types";
 import { v4 } from "uuid";
 
@@ -10,16 +11,20 @@ export default class Request {
   private timestamp: number;
   private cost: number;
 
-  constructor(data: RequestTypes.RequestConstructorData) {
+  constructor(
+    clientName: string,
+    config: RequestTypes.RequestConfig,
+    requestOptions?: RequestOptions
+  ) {
     this.id = v4();
     this.timestamp = Date.now();
-    this.priority = data.config.priority || 1;
-    this.cost = data.config.cost || 1;
+    this.priority = config.priority || 1;
+    this.cost = config.cost || 1;
     this.retries = 0;
-    this.config = data.config;
-    this.clientName = data.clientName;
-    if (data.requestOptions?.defaults) {
-      const { headers, baseURL, params } = data.requestOptions.defaults;
+    this.config = config;
+    this.clientName = clientName;
+    if (requestOptions?.defaults) {
+      const { headers, baseURL, params } = requestOptions.defaults;
       this.config = {
         ...this.config,
         baseURL: baseURL || this.config.baseURL,
