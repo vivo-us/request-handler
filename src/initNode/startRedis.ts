@@ -11,6 +11,7 @@ import RequestHandler from "..";
 async function startRedis(this: RequestHandler) {
   await this.redisListener.subscribe(
     `${this.redisName}:nodeAdded`,
+    `${this.redisName}:nodeUpdated`,
     `${this.redisName}:nodeHeartbeat`,
     `${this.redisName}:nodeRemoved`,
     `${this.redisName}:regenerateClients`,
