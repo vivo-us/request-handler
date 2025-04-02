@@ -2,15 +2,6 @@ import { ClientGenerator, CreateClientData } from "./client/types";
 import { Logger } from "winston";
 import IORedis from "ioredis";
 
-export interface RequestHandlerNodeStatus {
-  /** The ID of the RequestHandler node (UUID v4)*/
-  id: string;
-  /** Whether or not the RequestHandler node is initialized */
-  initialized: boolean;
-  /** The clients owned by the node */
-  ownedClients: string[];
-}
-
 export interface RequestHandlerConstructorOptions {
   /** The key to use when encrypting sensitive information */
   key: string;
@@ -29,12 +20,6 @@ export interface RequestHandlerConstructorOptions {
    */
   defaultClientOptions?: CreateClientData;
   /**
-   * Interval at which to check for role changes in ms
-   *
-   * **Default value: 10000 ms**
-   */
-  roleCheckInterval?: number;
-  /**
    * The priority of the RequestHandler node (higher is better)
    */
   priority?: number;
@@ -42,9 +27,15 @@ export interface RequestHandlerConstructorOptions {
   logger?: Logger;
 }
 
-export interface RequestHandlerNode {
+export interface RequestHandlerMetadata {
   id: string;
+  isInitialized: boolean;
   priority: number;
   registeredClients: string[];
   ownedClients: string[];
+}
+
+export interface ClientStatsRequest {
+  clientName: string;
+  nodeId: string;
 }

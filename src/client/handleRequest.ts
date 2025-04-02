@@ -9,8 +9,18 @@ async function handleRequest(this: Client, config: RequestConfig) {
   let res;
   do {
     await waitForRequestReady.bind(this)(request);
-    await request.handleRequestInterceptor();
-    await request.authenticate();
+    if (this.requestOptions.requestInterceptor) {
+      request.config = await this.requestOptions.requestInterceptor(
+        request.config
+      );
+    }
+    if (this.authenticator) {
+      const authHeader = await this.authenticator.authenticate(request.config);
+      request.config = {
+        ...request.config,
+        headers: { ...request.config.headers, ...authHeader },
+      };
+    }
     try {
       res = await this.http.request(request.config);
     } catch (error: any) {
@@ -22,34 +32,24 @@ async function handleRequest(this: Client, config: RequestConfig) {
 }
 
 function generateRequest(this: Client, config: RequestConfig) {
-  const request = new Request({
-    requestHandlerRedisName: this.requestHandlerRedisName,
-    requestOptions: this.requestOptions,
-    authenticator: this.authenticator,
-    clientRedisName: this.redisName,
-    clientName: this.name,
-    redis: this.redis,
-    config,
-  });
+  const request = new Request(this.name, config, this.requestOptions);
   const { method, baseURL, url } = request.config;
   this.logger.debug(
-    `Request ID: ${this.id} | ${method} | ${baseURL || ""}${url || ""}`
+    `Request ID: ${request.id} | ${method} | ${baseURL || ""}${url || ""}`
   );
   return request;
 }
 
-async function waitForRequestReady(this: Client, request: Request) {
-  if (this.rateLimit.type === "noLimit") {
-    await request.addToInProgress();
-    return;
-  }
+function waitForRequestReady(this: Client, request: Request) {
+  if (this.rateLimit.type === "noLimit") return true;
   return new Promise(async (resolve) => {
-    this.emitter.once(`requestReady:${request.id}`, async (message) => {
-      await request.removeFromQueue();
-      await request.addToInProgress();
+    this.emitter.once(`requestReady:${request.id}`, async () => {
       resolve(true);
     });
-    await request.addToQueue();
+    await this.redis.publish(
+      `${this.requestHandlerRedisName}:requestAdded`,
+      JSON.stringify(request.getMetadata())
+    );
   });
 }
 
@@ -61,8 +61,13 @@ async function handleResponse(
   if (!res) {
     throw new BaseError(this.logger, "No response received for the request.");
   }
-  await request.removeFromInProgress();
-  await request.handleResponseInterceptor(res);
+  await this.redis.publish(
+    `${this.requestHandlerRedisName}:requestDone`,
+    JSON.stringify(request.getRequestDoneData())
+  );
+  if (this.requestOptions?.responseInterceptor) {
+    await this.requestOptions.responseInterceptor(request.config, res);
+  }
   if (this.rateLimitChange) {
     const newLimit = await this.rateLimitChange(this.rateLimit, res);
     if (newLimit) await this.updateRateLimit(newLimit);
@@ -78,8 +83,11 @@ async function handleError(
 ) {
   const retryData = await handleRetry.bind(this)(request, res);
   handleLogError.bind(this)(request, res, retryData);
+  await this.redis.publish(
+    `${this.requestHandlerRedisName}:requestDone`,
+    JSON.stringify(request.getRequestDoneData(retryData))
+  );
   if (retryData.retry) return;
-  await request.removeFromInProgress(retryData);
   throw res;
 }
 

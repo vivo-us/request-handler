@@ -1,17 +1,4 @@
 import { AxiosRequestConfig, Method } from "axios";
-import { RequestOptions } from "../client/types";
-import { Authenticator } from "../authenticator";
-import IORedis from "ioredis";
-
-export interface RequestConstructorData {
-  requestHandlerRedisName: string;
-  clientName: string;
-  clientRedisName: string;
-  redis: IORedis;
-  config: RequestConfig;
-  requestOptions?: RequestOptions;
-  authenticator?: Authenticator;
-}
 
 export interface RequestConfig extends AxiosRequestConfig {
   clientName: "default" | string;
@@ -52,11 +39,8 @@ export interface RequestRetryData {
   waitTime: number;
 }
 
-export interface RequestDoneData {
-  cost: number;
+export interface RequestDoneData extends RequestMetadata {
   status: "success" | "failure";
-  requestId: string;
-  clientName: string;
   waitTime: number;
   isRateLimited: boolean;
 }

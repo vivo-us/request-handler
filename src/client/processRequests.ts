@@ -8,7 +8,13 @@ import Client from ".";
  */
 
 async function processRequests(this: Client) {
-  if (this.processingId || this.role === "worker") return;
+  if (
+    this.processingId ||
+    this.role === "worker" ||
+    !this.requestsInQueue.size
+  ) {
+    return;
+  }
   const id = v4();
   this.processingId = id;
   try {
@@ -20,13 +26,12 @@ async function processRequests(this: Client) {
       await waitForTokens.bind(this)(request.cost);
       if (this.freezeTimeout || this.thawRequestId) break;
       this.tokens -= request.cost;
-      await this.redis.set(`${this.redisName}:tokens`, this.tokens);
       this.requestsInProgress.set(key, request);
       this.requestsInQueue.delete(key);
       if (this.thawRequestCount) this.thawRequestId = key;
       await this.redis.publish(
         `${this.requestHandlerRedisName}:requestReady`,
-        key
+        JSON.stringify(request)
       );
       if (this.thawRequestCount) break;
     } while (this.requestsInQueue.size > 0);
