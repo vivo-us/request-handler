@@ -74,6 +74,7 @@ export default class Client {
       maxRetries: retryOptions?.maxRetries || 3,
       retryStatusCodes: retryOptions?.retryStatusCodes || [],
       thawRequestCount: retryOptions?.thawRequestCount || 3,
+      retryHandler: retryOptions?.retryHandler,
     };
     if (!data.client.authentication) return;
     this.authenticator = new Authenticator(
