@@ -27,7 +27,6 @@ export default class RequestHandler {
   protected redisName: string;
   protected redisListener: IORedis;
   protected logger: Logger;
-  protected requestHandlers: Map<string, RequestHandlerMetadata> = new Map();
   protected nodeHeartbeatTimeouts: Map<string, NodeJS.Timeout> = new Map();
   protected nodeHeartbeatInterval?: NodeJS.Timeout;
   protected emitter: NodeJS.EventEmitter = new EventEmitter();

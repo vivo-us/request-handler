@@ -1,9 +1,10 @@
 import { ClientStatistics, RateLimitUpdatedData } from "../client/types";
-import { ClientStatsRequest, RequestHandlerMetadata } from "../types";
 import { RequestDoneData, RequestMetadata } from "../request/types";
-import { updateClientRoles, updateNodesMap } from "./helpers";
+import updateClientRoles from "./updateClientRoles";
+import { ClientStatsRequest } from "../types";
 import createClients from "./createClients";
 import RequestHandler from "..";
+
 /**
  * This method starts the Redis listener and subscribes to the channels that the RequestHandler listens to.
  */
@@ -47,7 +48,7 @@ async function handleRedisMessage(
       await handleNodeUpdated.bind(this)(message);
       break;
     case `${this.redisName}:nodeHeartbeat`:
-      handleNodeHeartbeat.bind(this)(message);
+      await handleNodeHeartbeat.bind(this)(message);
       break;
     case `${this.redisName}:nodeRemoved`:
       await handleNodeRemoved.bind(this)(message);
@@ -82,35 +83,31 @@ async function handleRedisMessage(
 }
 
 async function handleNodeAdded(this: RequestHandler, message: string) {
-  const nodeData: RequestHandlerMetadata = JSON.parse(message);
-  this.requestHandlers.set(nodeData.id, nodeData);
-  await updateClientRoles.bind(this)();
-}
-
-async function handleNodeUpdated(this: RequestHandler, message: string) {
-  const nodeData: RequestHandlerMetadata = JSON.parse(message);
-  this.requestHandlers.set(nodeData.id, nodeData);
-  await updateClientRoles.bind(this)();
-}
-
-function handleNodeHeartbeat(this: RequestHandler, message: string) {
   if (this.id === message) return;
-  const timeout = this.nodeHeartbeatTimeouts.get(message);
-  if (timeout) clearTimeout(timeout);
   this.nodeHeartbeatTimeouts.set(
     message,
     setTimeout(async () => {
       this.logger.warn(`Node ${message} has not sent a heartbeat in 3 seconds`);
-      this.nodeHeartbeatTimeouts.delete(message);
-      this.requestHandlers.delete(message);
-      await updateNodesMap.bind(this)();
-      await updateClientRoles.bind(this)();
+      await handleNodeRemoved.bind(this)(message);
     }, 3000)
   );
+  await updateClientRoles.bind(this)();
+}
+
+async function handleNodeUpdated(this: RequestHandler, message: string) {
+  if (this.id === message) return;
+  await updateClientRoles.bind(this)();
+}
+
+async function handleNodeHeartbeat(this: RequestHandler, message: string) {
+  if (this.id === message) return;
+  const timeout = this.nodeHeartbeatTimeouts.get(message);
+  if (timeout) timeout.refresh();
+  else await handleNodeAdded.bind(this)(message);
 }
 
 async function handleNodeRemoved(this: RequestHandler, message: string) {
-  this.requestHandlers.delete(message);
+  if (this.id === message) return;
   const timeout = this.nodeHeartbeatTimeouts.get(message);
   if (timeout) clearTimeout(timeout);
   this.nodeHeartbeatTimeouts.delete(message);
