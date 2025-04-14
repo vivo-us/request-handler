@@ -29,6 +29,7 @@ export default class Client {
   protected hasUnsortedRequests: boolean = false;
   protected requestsInQueue: Map<string, RequestMetadata> = new Map();
   protected requestsInProgress: Map<string, RequestMetadata> = new Map();
+  protected requestsHeartbeat: Map<string, NodeJS.Timeout> = new Map();
   protected httpStatusCodesToMute: number[];
   protected emitter: NodeJS.EventEmitter;
   protected logger: Logger;
@@ -42,7 +43,7 @@ export default class Client {
 
   public handleRequest = handleRequest.bind(this);
   public updateRole = updateRole.bind(this);
-  private processRequests = processRequests.bind(this);
+  protected processRequests = processRequests.bind(this);
 
   constructor(data: ClientTypes.ClientConstructorData) {
     this.emitter = data.emitter;
@@ -95,7 +96,7 @@ export default class Client {
   }
 
   /**
-   * Updates the rate limit data for the client in Redis and publishes the new rate limit data to the requestHandler so that other nodes can update their clients.
+   * Updates the rate limit data for the client in Redis and publishes the new rate limit data to the requestHandler so that other instances can update their clients.
    *
    * @param data The new rate limit data
    */
@@ -198,9 +199,39 @@ export default class Client {
 
   public handleRequestAdded(request: RequestMetadata) {
     this.requestsInQueue.set(request.requestId, request);
+    this.requestsHeartbeat.set(
+      request.requestId,
+      setTimeout(() => this.handleRequestDied(request.requestId), 3000)
+    );
     this.hasUnsortedRequests = true;
     if (this.role === "worker") return;
     this.processRequests();
+  }
+
+  private handleRequestDied(requestId: string) {
+    this.requestsInQueue.delete(requestId);
+    this.requestsInProgress.delete(requestId);
+    const heartbeat = this.requestsHeartbeat.get(requestId);
+    if (heartbeat) {
+      clearTimeout(heartbeat);
+      this.requestsHeartbeat.delete(requestId);
+    }
+  }
+
+  public handleRequestHeartbeat(request: RequestMetadata) {
+    const heartbeat = this.requestsHeartbeat.get(request.requestId);
+    if (heartbeat) heartbeat.refresh();
+    else {
+      if (request.status === "inQueue") this.handleRequestAdded(request);
+      else {
+        this.requestsInProgress.set(request.requestId, request);
+        this.requestsInQueue.delete(request.requestId);
+        this.requestsHeartbeat.set(
+          request.requestId,
+          setTimeout(() => this.handleRequestDied(request.requestId), 3000)
+        );
+      }
+    }
   }
 
   public handleRequestReady(request: RequestMetadata) {
@@ -214,11 +245,16 @@ export default class Client {
 
   public handleRequestDone(data: RequestDoneData) {
     this.requestsInProgress.delete(data.requestId);
+    const heartbeat = this.requestsHeartbeat.get(data.requestId);
+    if (heartbeat) {
+      clearTimeout(heartbeat);
+      this.requestsHeartbeat.delete(data.requestId);
+    }
     if (this.role === "worker") return;
     if (this.rateLimit.type === "concurrencyLimit") this.addTokens(data.cost);
     if (data.waitTime) this.handleFreezeRequests(data);
     if (data.requestId !== this.thawRequestId) return;
-    if (data.status === "success") this.thawRequestCount--;
+    if (data.responseStatus === "success") this.thawRequestCount--;
     this.thawRequestId = undefined;
     this.processRequests();
   }

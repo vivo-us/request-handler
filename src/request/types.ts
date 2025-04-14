@@ -1,5 +1,7 @@
 import { AxiosRequestConfig, Method } from "axios";
 
+export type RequestStatus = "inQueue" | "inProgress";
+
 export interface RequestConfig extends AxiosRequestConfig {
   clientName: "default" | string;
   method: Method;
@@ -24,9 +26,10 @@ export interface RequestConfig extends AxiosRequestConfig {
 }
 
 export interface RequestMetadata {
+  requestId: string;
+  status: RequestStatus;
   priority: number;
   timestamp: number;
-  requestId: string;
   clientName: string;
   cost: number;
   retries: number;
@@ -40,7 +43,7 @@ export interface RequestRetryData {
 }
 
 export interface RequestDoneData extends RequestMetadata {
-  status: "success" | "failure";
+  responseStatus: "success" | "failure";
   waitTime: number;
   isRateLimited: boolean;
 }

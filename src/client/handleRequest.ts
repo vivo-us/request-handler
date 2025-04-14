@@ -5,39 +5,49 @@ import Request from "../request";
 import Client from ".";
 
 async function handleRequest(this: Client, config: RequestConfig) {
-  const request = generateRequest.bind(this)(config);
-  let res;
+  const request = new Request(this.name, config, this.requestOptions);
+  this.logger.debug(`Request ID: ${request.id} | Waiting...`);
   do {
-    await waitForRequestReady.bind(this)(request);
-    if (this.requestOptions.requestInterceptor) {
-      request.config = await this.requestOptions.requestInterceptor(
-        request.config
+    const interval = setInterval(async () => {
+      await this.redis.publish(
+        `${this.requestHandlerRedisName}:requestHeartbeat`,
+        JSON.stringify(request.getMetadata())
       );
-    }
-    if (this.authenticator) {
-      const authHeader = await this.authenticator.authenticate(request.config);
-      request.config = {
-        ...request.config,
-        headers: { ...request.config.headers, ...authHeader },
-      };
-    }
+    }, 1000);
+    await handlePreRequest.bind(this)(request);
+    let res;
     try {
       res = await this.http.request(request.config);
     } catch (error: any) {
-      await handleError.bind(this)(request, error);
+      await handleError.bind(this)(request, error, interval);
       continue;
     }
-  } while (!res && request.retries <= this.retryOptions.maxRetries);
-  return await handleResponse.bind(this)(request, res);
+    return await handleResponse.bind(this)(request, res, interval);
+  } while (request.retries <= this.retryOptions.maxRetries);
+  throw new BaseError(this.logger, "No response received for the request.");
 }
 
-function generateRequest(this: Client, config: RequestConfig) {
-  const request = new Request(this.name, config, this.requestOptions);
+async function handlePreRequest(this: Client, request: Request) {
+  await waitForRequestReady.bind(this)(request);
+  request.setStatus("inProgress");
+  if (this.requestOptions.requestInterceptor) {
+    request.config = await this.requestOptions.requestInterceptor(
+      request.config
+    );
+  }
+  if (this.authenticator) {
+    const authHeader = await this.authenticator.authenticate(request.config);
+    request.config = {
+      ...request.config,
+      headers: { ...request.config.headers, ...authHeader },
+    };
+  }
   const { method, baseURL, url } = request.config;
   this.logger.debug(
-    `Request ID: ${request.id} | ${method} | ${baseURL || ""}${url || ""}`
+    `Request ID: ${request.id} | ${method} | ${baseURL || ""}${url || ""}${
+      request.retries ? ` | Retry Attempt: ${request.retries}` : ""
+    }`
   );
-  return request;
 }
 
 function waitForRequestReady(this: Client, request: Request) {
@@ -56,11 +66,10 @@ function waitForRequestReady(this: Client, request: Request) {
 async function handleResponse(
   this: Client,
   request: Request,
-  res?: AxiosResponse
+  res: AxiosResponse,
+  interval: NodeJS.Timeout
 ) {
-  if (!res) {
-    throw new BaseError(this.logger, "No response received for the request.");
-  }
+  clearInterval(interval);
   await this.redis.publish(
     `${this.requestHandlerRedisName}:requestDone`,
     JSON.stringify(request.getRequestDoneData())
@@ -79,10 +88,12 @@ async function handleResponse(
 async function handleError(
   this: Client,
   request: Request,
-  res: AxiosError | any
+  res: AxiosError | any,
+  interval: NodeJS.Timeout
 ) {
   const retryData = await handleRetry.bind(this)(request, res);
   handleLogError.bind(this)(request, res, retryData);
+  clearInterval(interval);
   await this.redis.publish(
     `${this.requestHandlerRedisName}:requestDone`,
     JSON.stringify(request.getRequestDoneData(retryData))
@@ -137,7 +148,7 @@ function handleBackoff(this: Client, request: Request, data: RequestRetryData) {
     retryBackoffBaseTime;
   const power = retryBackoffMethod === "exponential" ? 2 : 1;
   data.waitTime = Math.pow(request.retries, power) * backoffBase;
-  data.message += ` | Attempt ${request.retries} | Retrying...`;
+  data.message += ` | Will retry...`;
   return data;
 }
 
@@ -150,7 +161,9 @@ function handleLogError(
   const status = res.response?.status;
   const shouldMute = status && this.httpStatusCodesToMute?.includes(status);
   const logger = shouldMute ? this.logger.debug : this.logger.error;
-  const message = `Request ID: ${request.id} | Status: ${status} | Code: ${res.code} | ${retryData.message}`;
+  const message = `Request ID: ${request.id} | Status: ${status} | Code: ${
+    res.code
+  }${retryData.message ? ` | ${retryData.message}` : ""}`;
   logger(message, {
     error: {
       message: res.message,

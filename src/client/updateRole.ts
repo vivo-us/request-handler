@@ -24,7 +24,7 @@ function updateRole(this: Client, role: ClientRole) {
   if (this.createData.sharedRateLimitClientName) return;
   this.startAddTokensInterval();
   startHealthCheckInterval.bind(this)();
-  this.emitter.emit(`${this.redisName}:processRequests`);
+  this.processRequests();
 }
 
 function startHealthCheckInterval(this: Client) {

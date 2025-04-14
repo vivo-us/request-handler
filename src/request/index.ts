@@ -10,6 +10,7 @@ export default class Request {
   private clientName: string;
   private timestamp: number;
   private cost: number;
+  private status: RequestTypes.RequestStatus = "inQueue";
 
   constructor(
     clientName: string,
@@ -38,9 +39,14 @@ export default class Request {
     this.retries++;
   }
 
+  setStatus(status: RequestTypes.RequestStatus) {
+    this.status = status;
+  }
+
   getMetadata(): RequestTypes.RequestMetadata {
     return {
       requestId: this.id,
+      status: this.status,
       clientName: this.clientName,
       timestamp: this.timestamp,
       priority: this.priority,
@@ -54,7 +60,7 @@ export default class Request {
   ): RequestTypes.RequestDoneData {
     return {
       ...this.getMetadata(),
-      status: retryData ? "failure" : "success",
+      responseStatus: retryData ? "failure" : "success",
       waitTime: retryData?.waitTime || 0,
       isRateLimited: retryData?.isRateLimited || false,
     };

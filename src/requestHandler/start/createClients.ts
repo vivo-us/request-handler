@@ -1,7 +1,7 @@
-import { CreateClientData } from "../client/types";
-import BaseError from "../baseError";
+import { CreateClientData } from "../../client/types";
+import BaseError from "../../baseError";
 import RequestHandler from "..";
-import Client from "../client";
+import Client from "../../client";
 
 /**
  * This method uses the client generators provided when the RequestHandler was created to create new clients.
