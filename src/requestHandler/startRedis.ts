@@ -1,9 +1,9 @@
-import { ClientStatistics, RateLimitUpdatedData } from "../../client/types";
-import { RequestDoneData, RequestMetadata } from "../../request/types";
+import { ClientStatistics, RateLimitUpdatedData } from "../client/types";
+import { RequestDoneData, RequestMetadata } from "../request/types";
 import updateClientRoles from "./updateClientRoles";
-import { ClientStatsRequest } from "../types";
+import { ClientStatsRequest } from "./types";
 import createClients from "./createClients";
-import RequestHandler from "..";
+import RequestHandler from ".";
 
 /**
  * This method starts the Redis listener and subscribes to the channels that the RequestHandler listens to.

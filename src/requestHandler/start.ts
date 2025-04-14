@@ -1,7 +1,7 @@
 import updateClientRoles from "./updateClientRoles";
 import createClients from "./createClients";
 import startRedis from "./startRedis";
-import RequestHandler from "..";
+import RequestHandler from ".";
 
 /**
  * Starts the request handler by:

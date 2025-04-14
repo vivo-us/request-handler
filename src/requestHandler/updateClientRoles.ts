@@ -1,5 +1,5 @@
-import { RequestHandlerMetadata } from "../types";
-import RequestHandler from "..";
+import { RequestHandlerMetadata } from "./types";
+import RequestHandler from ".";
 
 /**
  * This method gets the clients owned by the instance by comparing the list of registered clients with the list of clients registered before the instance.
