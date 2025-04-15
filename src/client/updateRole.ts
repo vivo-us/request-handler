@@ -43,19 +43,12 @@ function healthCheck(this: Client) {
     if (!this.addTokensInterval) this.startAddTokensInterval();
     return;
   }
-  for (const [key, request] of this.requestsInQueue) {
+  for (const key of this.requests.keys()) {
     if (this.requestsHeartbeat.has(key)) continue;
-    this.requestsInQueue.delete(key);
+    this.requests.delete(key);
   }
-  for (const [key, request] of this.requestsInProgress) {
-    if (this.requestsHeartbeat.has(key)) continue;
-    this.requestsInProgress.delete(key);
-  }
-  let requestsInProgressTokens = 0;
-  for (const request of this.requestsInProgress.values()) {
-    requestsInProgressTokens += request.cost;
-  }
-  const tokensOffBy = this.maxTokens - this.tokens - requestsInProgressTokens;
+  const requestsInProgressCost = this.getRequestsInProgressCost();
+  const tokensOffBy = this.maxTokens - this.tokens - requestsInProgressCost;
   if (tokensOffBy > 0) this.addTokens(tokensOffBy);
 }
 

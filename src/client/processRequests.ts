@@ -8,11 +8,7 @@ import Client from ".";
  */
 
 async function processRequests(this: Client) {
-  if (
-    this.processingId ||
-    this.role === "worker" ||
-    !this.requestsInQueue.size
-  ) {
+  if (this.processingId || this.role === "worker" || !this.requests.size) {
     return;
   }
   const id = v4();
@@ -20,21 +16,18 @@ async function processRequests(this: Client) {
   try {
     do {
       if (this.processingId !== id) break;
-      const next = getNextRequest.bind(this)();
-      if (!next) break;
-      const [key, request] = next;
+      const request = getNextRequest.bind(this)();
+      if (!request) break;
       await waitForTokens.bind(this)(request.cost);
       if (this.freezeTimeout || this.thawRequestId) break;
       this.tokens -= request.cost;
-      this.requestsInProgress.set(key, request);
-      this.requestsInQueue.delete(key);
-      if (this.thawRequestCount) this.thawRequestId = key;
+      if (this.thawRequestCount) this.thawRequestId = request.requestId;
       await this.redis.publish(
         `${this.requestHandlerRedisName}:requestReady`,
         JSON.stringify(request)
       );
       if (this.thawRequestCount) break;
-    } while (this.requestsInQueue.size > 0);
+    } while (this.requests.size > 0);
     this.processingId = undefined;
   } catch (e) {
     this.processingId = undefined;
@@ -44,8 +37,10 @@ async function processRequests(this: Client) {
 
 function getNextRequest(this: Client) {
   if (this.hasUnsortedRequests) {
-    this.requestsInQueue = new Map(
-      [...this.requestsInQueue].sort(([aKey, aValue], [bKey, bValue]) => {
+    this.requests = new Map(
+      [...this.requests].sort(([aKey, aValue], [bKey, bValue]) => {
+        if (aValue.status === "inProgress") return 1;
+        if (bValue.status === "inProgress") return -1;
         if (aValue.priority === bValue.priority) {
           if (aValue.retries === bValue.retries) {
             if (aValue.timestamp === bValue.timestamp) {
@@ -57,7 +52,9 @@ function getNextRequest(this: Client) {
     );
     this.hasUnsortedRequests = false;
   }
-  return this.requestsInQueue.entries().next().value;
+  for (const each of this.requests.values()) {
+    if (each.status === "inQueue") return each;
+  }
 }
 
 /**

@@ -27,8 +27,7 @@ export default class Client {
   protected addTokensInterval?: NodeJS.Timeout;
   protected healthCheckInterval?: NodeJS.Timeout;
   protected hasUnsortedRequests: boolean = false;
-  protected requestsInQueue: Map<string, RequestMetadata> = new Map();
-  protected requestsInProgress: Map<string, RequestMetadata> = new Map();
+  protected requests: Map<string, RequestMetadata> = new Map();
   protected requestsHeartbeat: Map<string, NodeJS.Timeout> = new Map();
   protected httpStatusCodesToMute: number[];
   protected emitter: NodeJS.EventEmitter;
@@ -174,6 +173,7 @@ export default class Client {
     else if (this.tokens > this.maxTokens) this.tokens = this.maxTokens;
     else {
       const tokensToAdd = cost || this.tokensToAdd;
+      const requestsInProgresscost = this.getRequestsInProgressCost();
       if (
         this.rateLimit.type === "requestLimit" &&
         tokensToAdd + this.tokens > this.maxTokens
@@ -181,13 +181,21 @@ export default class Client {
         this.tokens = this.maxTokens;
       } else if (
         this.rateLimit.type === "concurrencyLimit" &&
-        tokensToAdd + this.tokens + this.requestsInProgress.size >
-          this.maxTokens
+        tokensToAdd + this.tokens + requestsInProgresscost > this.maxTokens
       ) {
-        this.tokens = this.maxTokens - this.requestsInProgress.size;
+        this.tokens = this.maxTokens - requestsInProgresscost;
       } else this.tokens += tokensToAdd;
       this.emitter.emit(`${this.redisName}:tokensAdded`, this.tokens);
     }
+  }
+
+  protected getRequestsInProgressCost() {
+    let cost = 0;
+    for (const request of this.requests.values()) {
+      if (request.status !== "inProgress") continue;
+      cost += request.cost;
+    }
+    return cost;
   }
 
   public handleRateLimitUpdated(data: ClientTypes.RateLimitUpdatedData) {
@@ -198,7 +206,7 @@ export default class Client {
   }
 
   public handleRequestAdded(request: RequestMetadata) {
-    this.requestsInQueue.set(request.requestId, request);
+    this.requests.set(request.requestId, request);
     this.requestsHeartbeat.set(
       request.requestId,
       setTimeout(() => this.handleRequestDied(request.requestId), 3000)
@@ -209,8 +217,7 @@ export default class Client {
   }
 
   private handleRequestDied(requestId: string) {
-    this.requestsInQueue.delete(requestId);
-    this.requestsInProgress.delete(requestId);
+    this.requests.delete(requestId);
     const heartbeat = this.requestsHeartbeat.get(requestId);
     if (heartbeat) {
       clearTimeout(heartbeat);
@@ -221,30 +228,15 @@ export default class Client {
   public handleRequestHeartbeat(request: RequestMetadata) {
     const heartbeat = this.requestsHeartbeat.get(request.requestId);
     if (heartbeat) heartbeat.refresh();
-    else {
-      if (request.status === "inQueue") this.handleRequestAdded(request);
-      else {
-        this.requestsInProgress.set(request.requestId, request);
-        this.requestsInQueue.delete(request.requestId);
-        this.requestsHeartbeat.set(
-          request.requestId,
-          setTimeout(() => this.handleRequestDied(request.requestId), 3000)
-        );
-      }
-    }
+    else this.handleRequestAdded(request);
   }
 
   public handleRequestReady(request: RequestMetadata) {
-    const req = this.requestsInQueue.get(request.requestId);
-    if (req) {
-      this.requestsInProgress.set(request.requestId, req);
-      this.requestsInQueue.delete(request.requestId);
-    }
     this.emitter.emit(`requestReady:${request.requestId}`, request);
   }
 
   public handleRequestDone(data: RequestDoneData) {
-    this.requestsInProgress.delete(data.requestId);
+    this.requests.delete(data.requestId);
     const heartbeat = this.requestsHeartbeat.get(data.requestId);
     if (heartbeat) {
       clearTimeout(heartbeat);
@@ -274,12 +266,17 @@ export default class Client {
   }
 
   public getStats(): ClientTypes.ClientStatistics {
-    return {
+    const stats: ClientTypes.ClientStatistics = {
       clientName: this.name,
       tokens: this.tokens,
       maxTokens: this.maxTokens,
-      requestsInQueue: this.requestsInQueue.size,
-      requestsInProgress: this.requestsInProgress.size,
+      requestsInQueue: 0,
+      requestsInProgress: 0,
     };
+    for (const request of this.requests.values()) {
+      if (request.status === "inQueue") stats.requestsInQueue++;
+      else stats.requestsInProgress++;
+    }
+    return stats;
   }
 }
