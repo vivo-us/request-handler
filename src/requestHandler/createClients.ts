@@ -97,7 +97,8 @@ function mergeChildParentClients(
  */
 
 function resetClient(this: RequestHandler, clientName: string) {
-  const client = this.getClient(clientName);
+  const client = this.clients.get(clientName);
+  if (!client) return;
   client.updateRole("worker");
   this.clients.delete(clientName);
 }
