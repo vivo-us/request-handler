@@ -82,11 +82,15 @@ function waitForTokens(this: Client, cost: number): Promise<boolean> {
   if (this.rateLimit.type !== "requestLimit") return Promise.resolve(true);
   if (this.rateLimit.tokens >= cost) return Promise.resolve(true);
   return new Promise((resolve) => {
-    const listener = () => {
-      if (this.rateLimit.type !== "requestLimit") return Promise.resolve(true);
+    const listener = async () => {
+      if (this.rateLimit.type !== "requestLimit") return;
       if (this.rateLimit.tokens < cost) return;
       this.emitter.off(`${this.redisName}:tokensAdded`, listener);
       this.rateLimit.tokens -= cost;
+      await this.redis.publish(
+        `${this.requestHandlerRedisName}:clientTokensUpdated`,
+        JSON.stringify({ clientName: this.name, tokens: this.rateLimit.tokens })
+      );
       resolve(true);
     };
     this.emitter.on(`${this.redisName}:tokensAdded`, listener);

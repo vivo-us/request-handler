@@ -46,7 +46,10 @@ export default class Client {
     this.name = data.client.name;
     if (!data.client.rateLimit) this.rateLimit = { type: "noLimit" };
     else if (data.client.rateLimit.type === "requestLimit") {
-      this.rateLimit = { ...data.client.rateLimit, tokens: 0 };
+      this.rateLimit = {
+        ...data.client.rateLimit,
+        tokens: data.client.rateLimit.maxTokens,
+      };
     } else this.rateLimit = data.client.rateLimit;
     this.requestHandlerRedisName = data.requestHandlerRedisName;
     this.redisName = `${data.requestHandlerRedisName}:${(this.rateLimit.type ===
@@ -237,7 +240,20 @@ export default class Client {
 
   public handleRateLimitUpdated(data: ClientTypes.RateLimitUpdatedData) {
     if (data.rateLimit.type === "requestLimit") {
-      this.rateLimit = { ...data.rateLimit, tokens: 0 };
+      if (this.rateLimit.type !== "requestLimit") {
+        this.rateLimit = {
+          ...data.rateLimit,
+          tokens: data.rateLimit.maxTokens,
+        };
+      } else {
+        this.rateLimit = {
+          ...data.rateLimit,
+          tokens:
+            this.rateLimit.tokens > data.rateLimit.maxTokens
+              ? data.rateLimit.maxTokens
+              : this.rateLimit.tokens,
+        };
+      }
     } else this.rateLimit = data.rateLimit;
     if (this.role === "worker") return;
     this.startAddTokensInterval();
