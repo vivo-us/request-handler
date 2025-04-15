@@ -1,6 +1,6 @@
 import { CreateClientData } from "../client/types";
 import BaseError from "../baseError";
-import RequestHandler from "..";
+import RequestHandler from ".";
 import Client from "../client";
 
 /**

@@ -1,6 +1,8 @@
-import { ClientGenerator, CreateClientData } from "./client/types";
+import { ClientGenerator, CreateClientData } from "../client/types";
 import { Logger } from "winston";
 import IORedis from "ioredis";
+
+export type RequestHandlerStatus = "stopped" | "starting" | "started";
 
 export interface RequestHandlerConstructorOptions {
   /** The key to use when encrypting sensitive information */
@@ -20,7 +22,7 @@ export interface RequestHandlerConstructorOptions {
    */
   defaultClientOptions?: CreateClientData;
   /**
-   * The priority of the RequestHandler node (higher is better)
+   * The priority of the RequestHandler instance (higher is better)
    */
   priority?: number;
   /** A custom Winston Logger instance to use for logging */
@@ -29,7 +31,7 @@ export interface RequestHandlerConstructorOptions {
 
 export interface RequestHandlerMetadata {
   id: string;
-  isInitialized: boolean;
+  status: RequestHandlerStatus;
   priority: number;
   registeredClients: string[];
   ownedClients: string[];
@@ -37,5 +39,5 @@ export interface RequestHandlerMetadata {
 
 export interface ClientStatsRequest {
   clientName: string;
-  nodeId: string;
+  requestHandlerId: string;
 }

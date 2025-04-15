@@ -1,9 +1,9 @@
 import { ClientStatistics, RateLimitUpdatedData } from "../client/types";
 import { RequestDoneData, RequestMetadata } from "../request/types";
 import updateClientRoles from "./updateClientRoles";
-import { ClientStatsRequest } from "../types";
+import { ClientStatsRequest } from "./types";
 import createClients from "./createClients";
-import RequestHandler from "..";
+import RequestHandler from ".";
 
 /**
  * This method starts the Redis listener and subscribes to the channels that the RequestHandler listens to.
@@ -11,15 +11,16 @@ import RequestHandler from "..";
 
 async function startRedis(this: RequestHandler) {
   await this.redisListener.subscribe(
-    `${this.redisName}:nodeAdded`,
-    `${this.redisName}:nodeUpdated`,
-    `${this.redisName}:nodeHeartbeat`,
-    `${this.redisName}:nodeRemoved`,
+    `${this.redisName}:instanceStarted`,
+    `${this.redisName}:instanceUpdated`,
+    `${this.redisName}:instanceHeartbeat`,
+    `${this.redisName}:instanceStopped`,
     `${this.redisName}:regenerateClients`,
     `${this.redisName}:destroyClient`,
     `${this.redisName}:clientStatsRequested`,
     `${this.redisName}:clientStatsReady:${this.id}`,
     `${this.redisName}:requestAdded`,
+    `${this.redisName}:requestHeartbeat`,
     `${this.redisName}:requestReady`,
     `${this.redisName}:requestDone`,
     `${this.redisName}:rateLimitUpdated`
@@ -41,17 +42,17 @@ async function handleRedisMessage(
   message: string
 ) {
   switch (channel) {
-    case `${this.redisName}:nodeAdded`:
-      await handleNodeAdded.bind(this)(message);
+    case `${this.redisName}:instanceStarted`:
+      await handleInstanceStarted.bind(this)(message);
       break;
-    case `${this.redisName}:nodeUpdated`:
-      await handleNodeUpdated.bind(this)(message);
+    case `${this.redisName}:instanceUpdated`:
+      await handleInstanceUpdated.bind(this)(message);
       break;
-    case `${this.redisName}:nodeHeartbeat`:
-      await handleNodeHeartbeat.bind(this)(message);
+    case `${this.redisName}:instanceHeartbeat`:
+      await handleInstanceHeartbeat.bind(this)(message);
       break;
-    case `${this.redisName}:nodeRemoved`:
-      await handleNodeRemoved.bind(this)(message);
+    case `${this.redisName}:instanceStopped`:
+      await handleInstanceStopped.bind(this)(message);
       break;
     case `${this.redisName}:regenerateClients`:
       await handleRegenerateClients.bind(this)(message);
@@ -68,6 +69,9 @@ async function handleRedisMessage(
     case `${this.redisName}:requestAdded`:
       handleRequestAdded.bind(this)(message);
       break;
+    case `${this.redisName}:requestHeartbeat`:
+      handleRequestHeartbeat.bind(this)(message);
+      break;
     case `${this.redisName}:requestReady`:
       handleRequestReady.bind(this)(message);
       break;
@@ -82,35 +86,37 @@ async function handleRedisMessage(
   }
 }
 
-async function handleNodeAdded(this: RequestHandler, message: string) {
+async function handleInstanceStarted(this: RequestHandler, message: string) {
   if (this.id === message) return;
-  this.nodeHeartbeatTimeouts.set(
+  this.heartbeatTimeouts.set(
     message,
     setTimeout(async () => {
-      this.logger.warn(`Node ${message} has not sent a heartbeat in 3 seconds`);
-      await handleNodeRemoved.bind(this)(message);
+      this.logger.warn(
+        `Instance ${message} has not sent a heartbeat in 3 seconds`
+      );
+      await handleInstanceStopped.bind(this)(message);
     }, 3000)
   );
   await updateClientRoles.bind(this)();
 }
 
-async function handleNodeUpdated(this: RequestHandler, message: string) {
+async function handleInstanceUpdated(this: RequestHandler, message: string) {
   if (this.id === message) return;
   await updateClientRoles.bind(this)();
 }
 
-async function handleNodeHeartbeat(this: RequestHandler, message: string) {
+async function handleInstanceHeartbeat(this: RequestHandler, message: string) {
   if (this.id === message) return;
-  const timeout = this.nodeHeartbeatTimeouts.get(message);
+  const timeout = this.heartbeatTimeouts.get(message);
   if (timeout) timeout.refresh();
-  else await handleNodeAdded.bind(this)(message);
+  else await handleInstanceStarted.bind(this)(message);
 }
 
-async function handleNodeRemoved(this: RequestHandler, message: string) {
+async function handleInstanceStopped(this: RequestHandler, message: string) {
   if (this.id === message) return;
-  const timeout = this.nodeHeartbeatTimeouts.get(message);
+  const timeout = this.heartbeatTimeouts.get(message);
   if (timeout) clearTimeout(timeout);
-  this.nodeHeartbeatTimeouts.delete(message);
+  this.heartbeatTimeouts.delete(message);
   await updateClientRoles.bind(this)();
 }
 
@@ -136,7 +142,7 @@ async function handleClientStatsRequested(
   if (!getStatsClient || getStatsClient.role === "worker") return;
   const stats = getStatsClient.getStats();
   await this.redis.publish(
-    `${this.redisName}:clientStatsReady:${statsReq.nodeId}`,
+    `${this.redisName}:clientStatsReady:${statsReq.requestHandlerId}`,
     JSON.stringify(stats)
   );
 }
@@ -153,6 +159,12 @@ function handleRequestAdded(this: RequestHandler, message: string) {
   const metadata: RequestMetadata = JSON.parse(message);
   const addedClient = this.clients.get(metadata.clientName);
   if (addedClient) addedClient.handleRequestAdded(metadata);
+}
+
+function handleRequestHeartbeat(this: RequestHandler, message: string) {
+  const heartbeatData: RequestMetadata = JSON.parse(message);
+  const heartbeatClient = this.clients.get(heartbeatData.clientName);
+  if (heartbeatClient) heartbeatClient.handleRequestHeartbeat(heartbeatData);
 }
 
 function handleRequestReady(this: RequestHandler, message: string) {

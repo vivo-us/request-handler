@@ -2,7 +2,7 @@
 
 **IMPORTANT: This package is currently under very active developement. Breaking changes may occur at any time.**
 
-Request Handler is a multi-node capable external API management package that simplifies the process of making requests to external APIs. It provides a centralized method of authenticating requests, handling rate limits, managing multiple clients, and retrying requests. Additionally, it takes the headache out of managing rate limits between multiple nodes by utilizing Redis to notify other nodes of rate limit usage.
+Request Handler is a multi-instance capable external API management package that simplifies the process of making requests to external APIs. It provides a centralized method of authenticating requests, handling rate limits, managing multiple clients, and retrying requests. Additionally, it takes the headache out of managing rate limits between multiple instances by utilizing Redis to notify other instances of rate limit usage.
 
 ## Table of Contents
 
@@ -37,9 +37,9 @@ npm install @vivo-technology/request-handler
 
 ## Usage
 
-Getting started with Request Handler simply requires creating a new instance of the Request Handler class and calling the `initNode` method. This will register the node with the Request Handler and start the rate limiting process. See the [Request Handler Options](#request-handler-options) section for more information on the options available to you when creating a new instance of the Request Handler.
+Getting started with Request Handler simply requires creating a new instance of the Request Handler class and calling the `start` method. This will register the instance with the other Request Handlers and start the rate limiting process. See the [Request Handler Options](#request-handler-options) section for more information on the options available to you when creating a new instance of the Request Handler.
 
-Once initialized, you can use the `handleRequest` method to make requests to external APIs. See the [Request Config Options](#request-config-options) section for more information on the options available to you when making a request.
+Once started, you can use the `handleRequest` method to make requests to external APIs. See the [Request Config Options](#request-config-options) section for more information on the options available to you when making a request.
 
 ### Using the default client
 
@@ -53,7 +53,7 @@ const requestHandler = new RequestHandler({
   redis: ioRedis, // An IORedis instance
 });
 
-await requestHandler.initNode();
+await requestHandler.start();
 
 const response = await requestHandler.handleRequest({
   clientName: "default",
@@ -98,7 +98,7 @@ const requestHandler = new RequestHandler({
   },
 });
 
-await requestHandler.initNode();
+await requestHandler.start();
 
 const response = await requestHandler.handleRequest({
   clientName: "test",
@@ -112,11 +112,11 @@ const response = await requestHandler.handleRequest({
 ### Request Handler Options
 
 - `key`: A key to encrypt sensitive data including tokens and client secrets.
-- `redis`: An IORedis instance to store rate limit information and for multiple nodes to share rate limits.
+- `redis`: An IORedis instance to store rate limit information and for multiple instances to share rate limits.
 - `redisKeyPrefix` *(optional)*: A prefix to add to all keys stored in Redis for the Request Handler.
 - `clientGenerators` *(optional)*: An object containing client generators to register with the Request Handler, where the key is the name of the client generator and the value is the generator function.
 - `defaultClinetOptions` *(optional)*: A [Client Options](#client-options) object to use for the `default` client. The `default` client starts with no rate limits and no authentication.
-- `priority` *(optional)*: The priority of the node when deciding which node should handle rate limiting. Defaults to 0. Higher numbers are higher priority.
+- `priority` *(optional)*: The priority of the instance when deciding which instance should handle rate limiting. Defaults to 0. Higher numbers are higher priority.
 - `logger` *(optional)*: A Winston logger instance to use for logging. If not provided, a default logger will be used which simply logs to the console. The custom logger is useful for adding additional logging endpoints, customized the log format, or doing custom logic based on the log messages.
 
 ### Request Config Options
