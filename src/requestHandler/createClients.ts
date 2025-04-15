@@ -41,10 +41,6 @@ async function generateClients(
   parent?: CreateClientData
 ) {
   for (let client of clients) {
-    if (client.sharedRateLimitClientName) {
-      const sharedClient = this.getClient(client.sharedRateLimitClientName);
-      client.rateLimit = sharedClient.rateLimit;
-    }
     if (parent) client = mergeChildParentClients.bind(this)(client, parent);
     resetClient.bind(this)(client.name);
     await createClient.bind(this)(client);

@@ -36,8 +36,3 @@ export interface RequestHandlerMetadata {
   registeredClients: string[];
   ownedClients: string[];
 }
-
-export interface ClientStatsRequest {
-  clientName: string;
-  requestHandlerId: string;
-}

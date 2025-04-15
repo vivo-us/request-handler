@@ -12,7 +12,7 @@ async function updateClientRoles(this: RequestHandler, isStartup = false) {
   let hasChanges = false;
   for (const [name, client] of this.clients) {
     const newRole = clientsBefore.has(name) ? "worker" : "controller";
-    if (client.role === newRole) continue;
+    if (client.getRole() === newRole) continue;
     client.updateRole(newRole);
     hasChanges = true;
   }

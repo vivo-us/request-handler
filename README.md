@@ -22,6 +22,7 @@ Request Handler is a multi-instance capable external API management package that
         - [Sliding Window](#sliding-window)
       - [concurrencyLimit](#concurrencylimit)
       - [noLimit](#nolimit)
+      - [shared](#shared)
     - [Request Options](#request-options)
     - [Authentication Options](#authentication-options)
       - [OAuth2 Client Credentials](#oauth2-client-credentials)
@@ -134,7 +135,6 @@ All normal Axios [Request Config](https://axios-http.com/docs/req_config) option
 - `name`: The name of the client. This is used to identify the client when making requests.
 - `rateLimit` *(optional)*: An object defining the type of rate limit to use. Currently, there are three types of rate limits: `requestLimit`, `concurrencyLimit`, and `noLimit`. See the [Rate Limit Options](#rate-limit-options) section for more information.
 - `rateLimitChange` *(optional)*: A function that is called after each response is received to allow a check of whether the rate limit should be changed.
-- `sharedRateLimitClientName` *(optional)*: The name of another client to share rate limits with.
 - `requestOptions` *(optional)*: A set of options to pass to each request made by the client. This is useful if there are common parameters that need to be passed to each request. See the [Request Options](#request-options) section for more information.
 - `httpStatusCodesToMute` *(optional)*: A list of HTTP status codes to not log as errors. By default, all 4xx and 5xx status codes are logged as errors.
 - `healthCheckIntervalMs` *(optional)*: How often to run health checks on the client, which ensures that tokens are being added and not being lost. Defaults to 60 seconds (60000 ms).
@@ -210,7 +210,7 @@ Concurrency limitted clients allow you to limit the number of concurrent request
 
 Additional properties:
 
-- `maxTokens`: The maximum number of concurrent requests to allow.
+- `maxConcurrency`: The maximum number of concurrent requests to allow.
 
 ```js
 const clientGenerator = () => {
@@ -219,7 +219,7 @@ const clientGenerator = () => {
         name: "test",
         rateLimit: {
           type: "concurrencyLimit",
-          maxTokens: 10
+          maxConcurrency: 10
         }
       }
     ]
@@ -237,6 +237,28 @@ const clientGenerator = () => {
         name: "test",
         rateLimit: {
           type: "noLimit",
+        }
+      }
+    ]
+}
+```
+
+#### shared
+
+Shared clients allow one client to add its requests to another client's rate limit. This is useful for some OAuth scenarios where multiple authentication configurations are needed, but the rate limit is shared.
+
+Additional properties:
+
+- `clientName`: The name of the client to share the rate limit with.
+
+```js
+const clientGenerator = () => {
+    return [
+      {
+        name: "test",
+        rateLimit: {
+          type: "shared",
+          clientName: "otherClient"
         }
       }
     ]
