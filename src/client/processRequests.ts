@@ -8,9 +8,8 @@ import Client from ".";
  */
 
 async function processRequests(this: Client) {
-  if (this.processingId || this.role === "worker" || !this.requests.size) {
-    return;
-  }
+  if (this.role === "worker" || this.rateLimit.type === "shared") return;
+  if (this.processingId || !this.requests.size) return;
   const id = v4();
   this.processingId = id;
   try {
@@ -18,13 +17,16 @@ async function processRequests(this: Client) {
       if (this.processingId !== id) break;
       const request = getNextRequest.bind(this)();
       if (!request) break;
-      await waitForTokens.bind(this)(request.cost);
+      await waitForTurn.bind(this)(request.cost);
       if (this.freezeTimeout || this.thawRequestId) break;
-      this.tokens -= request.cost;
       if (this.thawRequestCount) this.thawRequestId = request.requestId;
+      this.requests.set(request.requestId, {
+        ...request,
+        status: "inProgress",
+      });
       await this.redis.publish(
         `${this.requestHandlerRedisName}:requestReady`,
-        JSON.stringify(request)
+        JSON.stringify({ ...request, status: "inProgress" })
       );
       if (this.thawRequestCount) break;
     } while (this.requests.size > 0);
@@ -57,6 +59,17 @@ function getNextRequest(this: Client) {
   }
 }
 
+function waitForTurn(this: Client, cost: number): Promise<boolean> {
+  switch (this.rateLimit.type) {
+    case "requestLimit":
+      return waitForTokens.bind(this)(cost);
+    case "concurrencyLimit":
+      return waitForConcurrency.bind(this)(cost);
+    default:
+      return Promise.resolve(true);
+  }
+}
+
 /**
  * This method checks for enough tokens in the client's bucket.
  *
@@ -66,15 +79,43 @@ function getNextRequest(this: Client) {
  */
 
 function waitForTokens(this: Client, cost: number): Promise<boolean> {
-  if (this.tokens >= cost) return Promise.resolve(true);
+  if (this.rateLimit.type !== "requestLimit") return Promise.resolve(true);
+  if (this.rateLimit.tokens >= cost) return Promise.resolve(true);
   return new Promise((resolve) => {
     const listener = () => {
-      if (this.tokens < cost) return;
-      resolve(true);
+      if (this.rateLimit.type !== "requestLimit") return Promise.resolve(true);
+      if (this.rateLimit.tokens < cost) return;
       this.emitter.off(`${this.redisName}:tokensAdded`, listener);
+      this.rateLimit.tokens -= cost;
+      resolve(true);
     };
     this.emitter.on(`${this.redisName}:tokensAdded`, listener);
   });
+}
+
+function waitForConcurrency(this: Client, cost: number): Promise<boolean> {
+  if (this.rateLimit.type !== "concurrencyLimit") return Promise.resolve(true);
+  const { maxConcurrency } = this.rateLimit;
+  const currCost = getRequestsInProgressCost.bind(this)();
+  if (maxConcurrency >= currCost + cost) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const listener = () => {
+      const currCost = getRequestsInProgressCost.bind(this)();
+      if (maxConcurrency < currCost + cost) return;
+      resolve(true);
+      this.emitter.off(`${this.redisName}:requestDone`, listener);
+    };
+    this.emitter.on(`${this.redisName}:requestDone`, listener);
+  });
+}
+
+function getRequestsInProgressCost(this: Client) {
+  let cost = 0;
+  for (const request of this.requests.values()) {
+    if (request.status !== "inProgress") continue;
+    cost += request.cost;
+  }
+  return cost;
 }
 
 export default processRequests;

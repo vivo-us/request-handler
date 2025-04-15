@@ -1,7 +1,6 @@
-import { ClientStatistics, RateLimitUpdatedData } from "../client/types";
+import { ClientTokensUpdatedData, RateLimitUpdatedData } from "../client/types";
 import { RequestDoneData, RequestMetadata } from "../request/types";
 import updateClientRoles from "./updateClientRoles";
-import { ClientStatsRequest } from "./types";
 import createClients from "./createClients";
 import RequestHandler from ".";
 
@@ -17,8 +16,6 @@ async function startRedis(this: RequestHandler) {
     `${this.redisName}:instanceStopped`,
     `${this.redisName}:regenerateClients`,
     `${this.redisName}:destroyClient`,
-    `${this.redisName}:clientStatsRequested`,
-    `${this.redisName}:clientStatsReady:${this.id}`,
     `${this.redisName}:requestAdded`,
     `${this.redisName}:requestHeartbeat`,
     `${this.redisName}:requestReady`,
@@ -60,11 +57,8 @@ async function handleRedisMessage(
     case `${this.redisName}:destroyClient`:
       handleDestroyClient.bind(this)(message);
       break;
-    case `${this.redisName}:clientStatsRequested`:
-      await handleClientStatsRequested.bind(this)(message);
-      break;
-    case `${this.redisName}:clientStatsReady:${this.id}`:
-      handleClientStatsReady.bind(this)(message);
+    case `${this.redisName}:clientTokensUpdated`:
+      await handleClientTokensUpdated.bind(this)(message);
       break;
     case `${this.redisName}:requestAdded`:
       handleRequestAdded.bind(this)(message);
@@ -127,32 +121,15 @@ async function handleRegenerateClients(this: RequestHandler, message: string) {
 
 function handleDestroyClient(this: RequestHandler, message: string) {
   const data = JSON.parse(message);
-  const destroyClient = this.clients.get(data.clientName);
-  if (!destroyClient) return;
+  const destroyClient = this.getClient(data.clientName);
   destroyClient.destroy();
   this.clients.delete(data.clientName);
 }
 
-async function handleClientStatsRequested(
-  this: RequestHandler,
-  message: string
-) {
-  const statsReq: ClientStatsRequest = JSON.parse(message);
-  const getStatsClient = this.clients.get(statsReq.clientName);
-  if (!getStatsClient || getStatsClient.role === "worker") return;
-  const stats = getStatsClient.getStats();
-  await this.redis.publish(
-    `${this.redisName}:clientStatsReady:${statsReq.requestHandlerId}`,
-    JSON.stringify(stats)
-  );
-}
-
-function handleClientStatsReady(this: RequestHandler, message: string) {
-  const statsData: ClientStatistics = JSON.parse(message);
-  this.emitter.emit(
-    `${this.redisName}:clientStatsReady:${statsData.clientName}`,
-    statsData
-  );
+function handleClientTokensUpdated(this: RequestHandler, message: string) {
+  const data: ClientTokensUpdatedData = JSON.parse(message);
+  const client = this.getClient(data.clientName);
+  client.handleTokensUpdated(data);
 }
 
 function handleRequestAdded(this: RequestHandler, message: string) {

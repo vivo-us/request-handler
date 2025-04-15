@@ -1,6 +1,6 @@
+import { RequestConfig, RequestMetadata } from "../request/types";
 import { AxiosResponse, CreateAxiosDefaults } from "axios";
 import { AuthCreateData } from "../authenticator/types";
-import { RequestConfig } from "../request/types";
 import EventEmitter from "events";
 import { Logger } from "winston";
 import IORedis from "ioredis";
@@ -40,8 +40,6 @@ export interface CreateClientData {
    * Should return a new rate limit object if the rate limit should change, otherwise return undefined
    */
   rateLimitChange?: RateLimitChange;
-  /** The client to share a rate limit with */
-  sharedRateLimitClientName?: string;
   /** Options to pass to each request */
   requestOptions?: RequestOptions;
   /** Options to configure the retry behavior of the request handler. */
@@ -78,7 +76,14 @@ export interface RateLimitUpdatedData {
 export type RateLimitData =
   | RequestLimitClient
   | ConcurrencyLimitClient
-  | NoLimitClient;
+  | NoLimitClient
+  | SharedLimitClient;
+
+export type CreatedRateLimit =
+  | CreatedRequestLimitClient
+  | ConcurrencyLimitClient
+  | NoLimitClient
+  | SharedLimitClient;
 
 export interface NoLimitClient {
   type: "noLimit";
@@ -94,10 +99,23 @@ export interface RequestLimitClient {
   maxTokens: number;
 }
 
+export interface CreatedRequestLimitClient extends RequestLimitClient {
+  /** The number of tokens the client has */
+  tokens: number;
+  /** The NodeJS Interval for adding tokens at the defined interval */
+  addTokensInterval?: NodeJS.Timeout;
+}
+
 export interface ConcurrencyLimitClient {
   type: "concurrencyLimit";
   /** Maximum number of concurrent requests allowed */
-  maxTokens: number;
+  maxConcurrency: number;
+}
+
+export interface SharedLimitClient {
+  type: "shared";
+  /** The name of the client to share a rate limit with */
+  clientName: string;
 }
 
 export interface RequestOptions {
@@ -238,8 +256,22 @@ export type ResponseInterceptor = (
 
 export interface ClientStatistics {
   clientName: string;
+  isFrozen: boolean;
+  isThawing: boolean;
+  thawRequestCount: number;
+  rateLimit: CreatedRateLimit;
+  requestsInQueue: ClientRequestsStatistics;
+  requestsInProgress: ClientRequestsStatistics;
+}
+
+export interface ClientRequestsStatistics {
+  count: number;
+  cost: number;
+  requests: RequestMetadata[];
+}
+
+export interface ClientTokensUpdatedData {
+  clientId: string;
+  clientName: string;
   tokens: number;
-  maxTokens: number;
-  requestsInQueue: number;
-  requestsInProgress: number;
 }

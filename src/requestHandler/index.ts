@@ -1,3 +1,4 @@
+import { ClientGenerator, CreateClientData } from "../client/types";
 import { RequestConfig } from "../request/types";
 import { AxiosResponse } from "axios";
 import defaultLogger from "./logger";
@@ -9,16 +10,10 @@ import IORedis from "ioredis";
 import start from "./start";
 import { v4 } from "uuid";
 import {
-  ClientStatsRequest,
   RequestHandlerConstructorOptions,
   RequestHandlerMetadata,
   RequestHandlerStatus,
 } from "./types";
-import {
-  ClientGenerator,
-  ClientStatistics,
-  CreateClientData,
-} from "../client/types";
 
 export default class RequestHandler {
   protected id: string;
@@ -89,17 +84,18 @@ export default class RequestHandler {
   }
 
   public getMetadata(this: RequestHandler): RequestHandlerMetadata {
-    const ownedClients: string[] = [];
-    this.clients.forEach((client) => {
-      if (client.role === "controller") ownedClients.push(client.name);
-    });
-    return {
+    const metadata: RequestHandlerMetadata = {
       id: this.id,
       status: this.status,
       priority: this.priority,
       registeredClients: Array.from(this.clients.keys()),
-      ownedClients,
+      ownedClients: [],
     };
+    for (const c of this.clients.values()) {
+      if (c.getRole() !== "controller") continue;
+      metadata.ownedClients.push(c.getName());
+    }
+    return metadata;
   }
 
   /**
@@ -181,23 +177,6 @@ export default class RequestHandler {
    */
 
   public async getClientStats(clientName: string) {
-    return await this.fetchClientStats(clientName);
-  }
-
-  private fetchClientStats(clientName: string): Promise<ClientStatistics> {
-    return new Promise(async (resolve) => {
-      this.emitter.once(
-        `${this.redisName}:clientStatsReady:${clientName}`,
-        (data: ClientStatistics) => resolve(data)
-      );
-      const statsRequest: ClientStatsRequest = {
-        clientName,
-        requestHandlerId: this.id,
-      };
-      await this.redis.publish(
-        `${this.redisName}:clientStatsRequested`,
-        JSON.stringify(statsRequest)
-      );
-    });
+    return this.getClient(clientName).getStats();
   }
 }

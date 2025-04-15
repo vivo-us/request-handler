@@ -41,10 +41,6 @@ async function generateClients(
   parent?: CreateClientData
 ) {
   for (let client of clients) {
-    if (client.sharedRateLimitClientName) {
-      const sharedClient = this.getClient(client.sharedRateLimitClientName);
-      client.rateLimit = sharedClient.rateLimit;
-    }
     if (parent) client = mergeChildParentClients.bind(this)(client, parent);
     resetClient.bind(this)(client.name);
     await createClient.bind(this)(client);
@@ -101,8 +97,7 @@ function mergeChildParentClients(
  */
 
 function resetClient(this: RequestHandler, clientName: string) {
-  const client = this.clients.get(clientName);
-  if (!client) return;
+  const client = this.getClient(clientName);
   client.updateRole("worker");
   this.clients.delete(clientName);
 }

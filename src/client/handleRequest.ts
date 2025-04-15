@@ -5,7 +5,11 @@ import Request from "../request";
 import Client from ".";
 
 async function handleRequest(this: Client, config: RequestConfig) {
-  const request = new Request(this.name, config, this.requestOptions);
+  const request = new Request(
+    this.rateLimit.type === "shared" ? this.rateLimit.clientName : this.name,
+    config,
+    this.requestOptions
+  );
   this.logger.debug(`Request ID: ${request.id} | Waiting...`);
   do {
     const interval = setInterval(async () => {
@@ -29,7 +33,6 @@ async function handleRequest(this: Client, config: RequestConfig) {
 
 async function handlePreRequest(this: Client, request: Request) {
   await waitForRequestReady.bind(this)(request);
-  request.setStatus("inProgress");
   if (this.requestOptions.requestInterceptor) {
     request.config = await this.requestOptions.requestInterceptor(
       request.config
@@ -54,6 +57,7 @@ function waitForRequestReady(this: Client, request: Request) {
   if (this.rateLimit.type === "noLimit") return true;
   return new Promise(async (resolve) => {
     this.emitter.once(`requestReady:${request.id}`, async () => {
+      request.setStatus("inProgress");
       resolve(true);
     });
     await this.redis.publish(
@@ -144,8 +148,9 @@ async function handleRetry(this: Client, request: Request, error: AxiosError) {
 function handleBackoff(this: Client, request: Request, data: RequestRetryData) {
   const { retryBackoffBaseTime, retryBackoffMethod } = this.retryOptions;
   const backoffBase =
-    (this.rateLimit.type === "requestLimit" && this.rateLimit.interval) ||
-    retryBackoffBaseTime;
+    this.rateLimit.type === "requestLimit"
+      ? this.rateLimit.interval
+      : retryBackoffBaseTime;
   const power = retryBackoffMethod === "exponential" ? 2 : 1;
   data.waitTime = Math.pow(request.retries, power) * backoffBase;
   data.message += ` | Will retry...`;
