@@ -1,5 +1,6 @@
 import { RequestConfig, RequestRetryData } from "../request/types";
 import { AxiosError, AxiosResponse } from "axios";
+import { RateLimitData } from "./types";
 import BaseError from "../baseError";
 import Request from "../request";
 import Client from ".";
@@ -82,7 +83,16 @@ async function handleResponse(
     await this.requestOptions.responseInterceptor(request.config, res);
   }
   if (this.rateLimitChange) {
-    const newLimit = await this.rateLimitChange(this.rateLimit, res);
+    let rateLimit: RateLimitData;
+    if (this.rateLimit.type === "requestLimit") {
+      rateLimit = {
+        type: "requestLimit",
+        tokensToAdd: this.rateLimit.tokensToAdd,
+        maxTokens: this.rateLimit.maxTokens,
+        interval: this.rateLimit.interval,
+      };
+    } else rateLimit = this.rateLimit;
+    const newLimit = await this.rateLimitChange(rateLimit, res);
     if (newLimit) await this.updateRateLimit(newLimit);
   }
   this.logger.debug(`Request ID: ${request.id} | Status: ${res.status}`);
