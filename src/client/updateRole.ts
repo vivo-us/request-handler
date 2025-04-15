@@ -33,7 +33,7 @@ function startHealthCheckInterval(this: Client) {
   if (this.createData.sharedRateLimitClientName) return;
   this.healthCheckInterval = setInterval(() => {
     healthCheck.call(this);
-  }, this.createData.healthCheckIntervalMs || 60000);
+  }, this.createData.healthCheckIntervalMs || 15000);
 }
 
 function healthCheck(this: Client) {
@@ -43,8 +43,19 @@ function healthCheck(this: Client) {
     if (!this.addTokensInterval) this.startAddTokensInterval();
     return;
   }
-  const tokensOffBy =
-    this.maxTokens - this.tokens - this.requestsInProgress.size;
+  for (const [key, request] of this.requestsInQueue) {
+    if (this.requestsHeartbeat.has(key)) continue;
+    this.requestsInQueue.delete(key);
+  }
+  for (const [key, request] of this.requestsInProgress) {
+    if (this.requestsHeartbeat.has(key)) continue;
+    this.requestsInProgress.delete(key);
+  }
+  let requestsInProgressTokens = 0;
+  for (const request of this.requestsInProgress.values()) {
+    requestsInProgressTokens += request.cost;
+  }
+  const tokensOffBy = this.maxTokens - this.tokens - requestsInProgressTokens;
   if (tokensOffBy > 0) this.addTokens(tokensOffBy);
 }
 
