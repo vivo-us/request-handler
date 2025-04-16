@@ -13,6 +13,7 @@ async function handleRequest(this: Client, config: RequestConfig) {
   );
   this.logger.debug(`Request ID: ${request.id} | Waiting...`);
   do {
+    request.setStatus("inQueue");
     const interval = setInterval(async () => {
       await this.redis.publish(
         `${this.requestHandlerRedisName}:requestHeartbeat`,
