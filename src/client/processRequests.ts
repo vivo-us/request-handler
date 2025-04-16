@@ -59,10 +59,10 @@ function getNextRequest(this: Client) {
   }
 }
 
-function waitForTurn(this: Client, cost: number): Promise<boolean> {
+async function waitForTurn(this: Client, cost: number): Promise<boolean> {
   switch (this.rateLimit.type) {
     case "requestLimit":
-      return waitForTokens.bind(this)(cost);
+      return await waitForTokens.bind(this)(cost);
     case "concurrencyLimit":
       return waitForConcurrency.bind(this)(cost);
     default:
@@ -78,10 +78,14 @@ function waitForTurn(this: Client, cost: number): Promise<boolean> {
  * If the client does not have enough tokens, the method will wait for enough tokens to be added to the client's bucket.
  */
 
-function waitForTokens(this: Client, cost: number): Promise<boolean> {
+async function waitForTokens(this: Client, cost: number): Promise<boolean> {
   if (this.rateLimit.type !== "requestLimit") return Promise.resolve(true);
   if (this.rateLimit.tokens >= cost) {
     this.rateLimit.tokens -= cost;
+    await this.redis.publish(
+      `${this.requestHandlerRedisName}:clientTokensUpdated`,
+      JSON.stringify({ clientName: this.name, tokens: this.rateLimit.tokens })
+    );
     return Promise.resolve(true);
   }
   return new Promise((resolve) => {
