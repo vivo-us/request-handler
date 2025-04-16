@@ -322,12 +322,22 @@ export default class Client {
   }
 
   public getStats(): ClientTypes.ClientStatistics {
+    let rateLimit: ClientTypes.CreatedRateLimit;
+    if (this.rateLimit.type === "requestLimit") {
+      rateLimit = {
+        type: "requestLimit",
+        tokens: this.rateLimit.tokens,
+        maxTokens: this.rateLimit.maxTokens,
+        interval: this.rateLimit.interval,
+        tokensToAdd: this.rateLimit.tokensToAdd,
+      };
+    } else rateLimit = this.rateLimit;
     const stats: ClientTypes.ClientStatistics = {
       clientName: this.name,
       isFrozen: this.freezeTimeout !== undefined,
       isThawing: this.thawRequestId !== undefined,
       thawRequestCount: this.thawRequestCount,
-      rateLimit: this.rateLimit,
+      rateLimit,
       requestsInQueue: { count: 0, cost: 0, requests: [] },
       requestsInProgress: { count: 0, cost: 0, requests: [] },
     };
