@@ -80,7 +80,10 @@ function waitForTurn(this: Client, cost: number): Promise<boolean> {
 
 function waitForTokens(this: Client, cost: number): Promise<boolean> {
   if (this.rateLimit.type !== "requestLimit") return Promise.resolve(true);
-  if (this.rateLimit.tokens >= cost) return Promise.resolve(true);
+  if (this.rateLimit.tokens >= cost) {
+    this.rateLimit.tokens -= cost;
+    return Promise.resolve(true);
+  }
   return new Promise((resolve) => {
     const listener = async () => {
       if (this.rateLimit.type !== "requestLimit") return;
