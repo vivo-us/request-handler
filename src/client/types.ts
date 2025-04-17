@@ -1,6 +1,5 @@
 import { RequestConfig, RequestMetadata } from "../request/types";
 import { AxiosResponse, CreateAxiosDefaults } from "axios";
-import { AuthCreateData } from "../authenticator/types";
 import EventEmitter from "events";
 import { Logger } from "winston";
 import IORedis from "ioredis";
@@ -274,4 +273,103 @@ export interface ClientTokensUpdatedData {
   clientId: string;
   clientName: string;
   tokens: number;
+}
+
+export type AuthCreateData =
+  | AuthDataOAuth2ClientCredentials
+  | AuthDataOAuth2GrantType
+  | AuthDataToken
+  | AuthDataBasic;
+
+export interface AuthDataOAuth2ClientCredentials
+  extends OAuthBaseData,
+    CustomHeader {
+  type: "oauth2ClientCredentials";
+  refreshConfig: OAuthRefreshConfig;
+}
+
+export interface AuthDataOAuth2GrantType extends OAuthBaseData, CustomHeader {
+  type: "oauth2GrantType";
+  refreshToken: string;
+  refreshConfig: OAuthRefreshConfig;
+}
+
+export interface OAuthRefreshConfig {
+  /** Where to send the OAuth request */
+  url: string;
+  /**
+   * Where to put the authentication data in the request:
+   *
+   * - `jsonBody`: The data will be sent in the body of the request as JSON
+   * - `urlQuery`: The data will be sent in the URL as query parameters
+   * - `urlEncodedForm`: The data will be sent in the body of the request as a URL encoded form data
+   */
+  dataLocation: "jsonBody" | "urlQuery" | "urlEncodedForm";
+  /**
+   * The data to send in the request
+   *
+   * Some values are available via keywords so you don't have to hardcode them
+   * - `{{clientId}}`: The clientId from the authentication data
+   * - `{{clientSecret}}`: The clientSecret from the authentication data
+   * - `{{refreshToken}}`: The refreshToken from the authentication data
+   */
+  data: Record<string, string>;
+  /**
+   * Any custom headers to include in the request
+   *
+   * NOTE: If using Basic Auth, use the useBasicAuth property instead
+   */
+  customHeaders?: { [key: string]: string };
+  /**
+   * Whether or not to send the clientId and clientSecret as a Base64 encoded string in Basic auth header
+   */
+  useBasicAuth?: boolean;
+  /** If the provided URL does not return data in a normal OAuth standard response, use the responseInterceptor to format it into an acceptable format */
+  responseInterceptor?: (
+    res: AxiosResponse
+  ) =>
+    | Promise<OAuthResponse | OAuthGrantTypeResponse>
+    | OAuthResponse
+    | OAuthGrantTypeResponse;
+}
+
+export interface AuthDataToken extends CustomHeader {
+  type: "token";
+  token: string;
+  /** Whether or not to encode in Base64 */
+  encodeBase64?: boolean;
+}
+
+export interface AuthDataBasic extends CustomHeader {
+  type: "basic";
+  username: string;
+  password: string;
+}
+
+export interface OAuthBaseData {
+  clientId: string;
+  clientSecret: string;
+  /** Additional metdata for passing additional info */
+  metadata?: { [key: string]: any };
+}
+
+export interface OAuthResponse {
+  access_token: string;
+  expires_in: number;
+  token_type: string;
+  refresh_token?: string;
+  refresh_token_expires_in?: number;
+}
+
+export interface OAuthGrantTypeResponse extends OAuthResponse {
+  refresh_token: string;
+}
+
+export interface CustomHeader {
+  /** A Custom header to include the token in */
+  customHeaderName?: string;
+  /** A Custom prefix to use in front of the token. Default to "Bearer" */
+  customPrefix?: string;
+  /** Whether or not to exclude a prefix. Default to false */
+  excludePrefix?: boolean;
 }

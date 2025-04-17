@@ -1,5 +1,6 @@
 import { RequestConfig, RequestRetryData } from "../request/types";
 import { AxiosError, AxiosResponse } from "axios";
+import authenticate from "./authenticate";
 import { RateLimitData } from "./types";
 import BaseError from "../baseError";
 import Request from "../request";
@@ -40,8 +41,8 @@ async function handlePreRequest(this: Client, request: Request) {
       request.config
     );
   }
-  if (this.authenticator) {
-    const authHeader = await this.authenticator.authenticate(request.config);
+  const authHeader = await authenticate.bind(this)();
+  if (authHeader) {
     request.config = {
       ...request.config,
       headers: { ...request.config.headers, ...authHeader },
