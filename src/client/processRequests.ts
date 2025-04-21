@@ -1,5 +1,6 @@
 import { v4 } from "uuid";
 import Client from ".";
+import { ClientTokensUpdatedData } from "./types";
 
 /**
  * This method works through the pending requests and processes them in order of priority and timestamp.
@@ -59,14 +60,26 @@ function getNextRequest(this: Client) {
   }
 }
 
-async function waitForTurn(this: Client, cost: number): Promise<boolean> {
+async function waitForTurn(this: Client, cost: number): Promise<void> {
   switch (this.rateLimit.type) {
     case "requestLimit":
-      return await waitForTokens.bind(this)(cost);
+      await waitForTokens.bind(this)(cost);
+      this.rateLimit.tokens -= cost;
+      const data: ClientTokensUpdatedData = {
+        clientId: this.id,
+        clientName: this.name,
+        tokens: this.rateLimit.tokens,
+      };
+      await this.redis.publish(
+        `${this.requestHandlerRedisName}:clientTokensUpdated`,
+        JSON.stringify(data)
+      );
+      break;
     case "concurrencyLimit":
-      return waitForConcurrency.bind(this)(cost);
+      await waitForConcurrency.bind(this)(cost);
+      break;
     default:
-      return Promise.resolve(true);
+      return;
   }
 }
 
@@ -80,24 +93,12 @@ async function waitForTurn(this: Client, cost: number): Promise<boolean> {
 
 async function waitForTokens(this: Client, cost: number): Promise<boolean> {
   if (this.rateLimit.type !== "requestLimit") return Promise.resolve(true);
-  if (this.rateLimit.tokens >= cost) {
-    this.rateLimit.tokens -= cost;
-    await this.redis.publish(
-      `${this.requestHandlerRedisName}:clientTokensUpdated`,
-      JSON.stringify({ clientName: this.name, tokens: this.rateLimit.tokens })
-    );
-    return Promise.resolve(true);
-  }
+  if (this.rateLimit.tokens >= cost) return Promise.resolve(true);
   return new Promise((resolve) => {
     const listener = async () => {
       if (this.rateLimit.type !== "requestLimit") return;
       if (this.rateLimit.tokens < cost) return;
       this.emitter.off(`${this.redisName}:tokensAdded`, listener);
-      this.rateLimit.tokens -= cost;
-      await this.redis.publish(
-        `${this.requestHandlerRedisName}:clientTokensUpdated`,
-        JSON.stringify({ clientName: this.name, tokens: this.rateLimit.tokens })
-      );
       resolve(true);
     };
     this.emitter.on(`${this.redisName}:tokensAdded`, listener);

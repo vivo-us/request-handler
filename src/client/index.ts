@@ -224,9 +224,14 @@ export default class Client {
       if (isOver) this.rateLimit.tokens = maxTokens;
       else this.rateLimit.tokens += tokensToAdd;
       this.emitter.emit(`${this.redisName}:tokensAdded`, this.rateLimit.tokens);
+      const data: ClientTypes.ClientTokensUpdatedData = {
+        clientId: this.id,
+        clientName: this.name,
+        tokens: this.rateLimit.tokens,
+      };
       await this.redis.publish(
         `${this.requestHandlerRedisName}:clientTokensUpdated`,
-        JSON.stringify({ clientName: this.name, tokens: this.rateLimit.tokens })
+        JSON.stringify(data)
       );
     }
   }
