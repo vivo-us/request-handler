@@ -3,7 +3,6 @@ import BaseClient from "..";
 import {
   ClientConstructorData,
   ClientRole,
-  ClientTokensUpdatedData,
   NoLimitClientOptions,
   RateLimitStats,
   RateLimitUpdatedData,
@@ -14,10 +13,6 @@ class NoLimitClient extends BaseClient {
   constructor(data: ClientConstructorData, rateLimit: NoLimitClientOptions) {
     super(data, data.client.name);
     this.rateLimit = rateLimit;
-  }
-
-  public handleTokensUpdated(data: ClientTokensUpdatedData): void {
-    return;
   }
 
   public handleRateLimitUpdated(data: RateLimitUpdatedData) {
