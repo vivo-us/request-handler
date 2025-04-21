@@ -90,6 +90,7 @@ abstract class BaseClient {
 
   public async init() {
     await this.updateRateLimit(this.rateLimit);
+    this.startHealthCheckInterval();
   }
 
   /**
@@ -109,6 +110,17 @@ abstract class BaseClient {
     );
   }
 
+  private startHealthCheckInterval() {
+    if (this.healthCheckInterval) return;
+    this.healthCheckInterval = setInterval(() => {
+      for (const key of this.requests.keys()) {
+        if (this.requestsHeartbeat.has(key)) continue;
+        this.requests.delete(key);
+      }
+      this.handleHealthCheck();
+    }, this.healthCheckIntervalMs);
+  }
+
   /**
    * This method destroys the client by removing all keys associated with the client from Redis and clearing the interval for adding tokens to the client's bucket.
    */
@@ -117,6 +129,12 @@ abstract class BaseClient {
     this.handleDestroy();
     this.removeHealthCheckInterval();
     this.logger.info(`Client ${this.name} | Destroyed`);
+  }
+
+  private removeHealthCheckInterval() {
+    if (!this.healthCheckInterval) return;
+    clearInterval(this.healthCheckInterval);
+    this.healthCheckInterval = undefined;
   }
 
   public getName() {
@@ -148,26 +166,8 @@ abstract class BaseClient {
   public updateRole(role: ClientTypes.ClientRole) {
     if (role === this.role) return;
     this.role = role;
-    this.startHealthCheckInterval();
     this.handleUpdateRole(role);
     this.processRequests();
-  }
-
-  private startHealthCheckInterval() {
-    if (this.healthCheckInterval) return;
-    this.healthCheckInterval = setInterval(() => {
-      for (const key of this.requests.keys()) {
-        if (this.requestsHeartbeat.has(key)) continue;
-        this.requests.delete(key);
-      }
-      this.handleHealthCheck();
-    }, this.healthCheckIntervalMs);
-  }
-
-  private removeHealthCheckInterval() {
-    if (!this.healthCheckInterval) return;
-    clearInterval(this.healthCheckInterval);
-    this.healthCheckInterval = undefined;
   }
 
   public handleRequestAdded(request: RequestMetadata) {
