@@ -1,7 +1,9 @@
+import ConcurrencyLimitClient from "../client/concurrencyLimitClient";
+import RequestLimitClient from "../client/requestLimitClient";
+import NoLimitClient from "../client/noLimitClient";
 import { CreateClientData } from "../client/types";
 import BaseError from "../baseError";
 import RequestHandler from ".";
-import Client from "../client";
 
 /**
  * This method uses the client generators provided when the RequestHandler was created to create new clients.
@@ -118,16 +120,31 @@ async function createClient(this: RequestHandler, data: CreateClientData) {
       `Client with name ${data.name} already exists.`
     );
   }
-  const client = new Client({
+  const baseData = {
     client: data,
     redis: this.redis,
     requestHandlerRedisName: this.redisName,
     logger: this.logger,
     key: this.key,
     emitter: this.emitter,
-  });
-  this.clients.set(data.name, client);
-  await client.init();
+  };
+  switch (data.rateLimit.type) {
+    case "requestLimit":
+      const rlClient = new RequestLimitClient(baseData, data.rateLimit);
+      this.clients.set(data.name, rlClient);
+      await rlClient.init();
+      break;
+    case "concurrencyLimit":
+      const clClient = new ConcurrencyLimitClient(baseData, data.rateLimit);
+      this.clients.set(data.name, clClient);
+      await clClient.init();
+      break;
+    case "noLimit":
+      const nlClient = new NoLimitClient(baseData, data.rateLimit);
+      this.clients.set(data.name, nlClient);
+      await nlClient.init();
+      break;
+  }
 }
 
 export default createClients;

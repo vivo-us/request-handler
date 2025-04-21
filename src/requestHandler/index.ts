@@ -3,9 +3,9 @@ import { RequestConfig } from "../request/types";
 import { AxiosResponse } from "axios";
 import defaultLogger from "./logger";
 import BaseError from "../baseError";
+import BaseClient from "../client";
 import EventEmitter from "events";
 import { Logger } from "winston";
-import Client from "../client";
 import IORedis from "ioredis";
 import start from "./start";
 import { v4 } from "uuid";
@@ -27,7 +27,7 @@ export default class RequestHandler {
   protected heartbeatInterval?: NodeJS.Timeout;
   protected emitter: NodeJS.EventEmitter = new EventEmitter();
   protected key: string;
-  protected clients: Map<string, Client> = new Map();
+  protected clients: Map<string, BaseClient> = new Map();
   protected defaultClient: CreateClientData;
   protected clientGenerators: Record<string, ClientGenerator>;
 
@@ -158,7 +158,7 @@ export default class RequestHandler {
    * @param clientName The name of the client to get
    */
 
-  protected getClient(clientName: string): Client {
+  protected getClient(clientName: string): BaseClient {
     const client = this.clients.get(clientName);
     if (client) return client;
     throw new BaseError(

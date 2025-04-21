@@ -30,10 +30,8 @@ export interface CreateClientData {
   name: string;
   /**
    * The Rate Limit info for the Client
-   *
-   * Defaults to no limit
    */
-  rateLimit?: RateLimitData;
+  rateLimit: RateLimitData;
   /**
    * A function to take the old rate limit and the response of a request and see if the rate limit should change
    *
@@ -74,22 +72,16 @@ export interface RateLimitUpdatedData {
 }
 
 export type RateLimitData =
-  | RequestLimitClient
-  | ConcurrencyLimitClient
-  | NoLimitClient
+  | RequestLimitClientOptions
+  | ConcurrencyLimitClientOptions
+  | NoLimitClientOptions
   | SharedLimitClient;
 
-export type CreatedRateLimit =
-  | CreatedRequestLimitClient
-  | ConcurrencyLimitClient
-  | NoLimitClient
-  | SharedLimitClient;
-
-export interface NoLimitClient {
+export interface NoLimitClientOptions {
   type: "noLimit";
 }
 
-export interface RequestLimitClient {
+export interface RequestLimitClientOptions {
   type: "requestLimit";
   /** The number of ms between adding more tokens */
   interval: number;
@@ -99,14 +91,7 @@ export interface RequestLimitClient {
   maxTokens: number;
 }
 
-export interface CreatedRequestLimitClient extends RequestLimitClient {
-  /** The number of tokens the client has */
-  tokens: number;
-  /** The NodeJS Interval for adding tokens at the defined interval */
-  addTokensInterval?: NodeJS.Timeout;
-}
-
-export interface ConcurrencyLimitClient {
+export interface ConcurrencyLimitClientOptions {
   type: "concurrencyLimit";
   /** Maximum number of concurrent requests allowed */
   maxConcurrency: number;
@@ -116,6 +101,17 @@ export interface SharedLimitClient {
   type: "shared";
   /** The name of the client to share a rate limit with */
   clientName: string;
+}
+
+export type RateLimitStats =
+  | RequestLimitClientStats
+  | ConcurrencyLimitClientOptions
+  | NoLimitClientOptions
+  | SharedLimitClient;
+
+export interface RequestLimitClientStats extends RequestLimitClientOptions {
+  /** The number of tokens currently in the client's bucket */
+  tokens: number;
 }
 
 export interface RequestOptions {
@@ -259,7 +255,7 @@ export interface ClientStatistics {
   isFrozen: boolean;
   isThawing: boolean;
   thawRequestCount: number;
-  rateLimit: CreatedRateLimit;
+  rateLimit: RateLimitStats;
   requestsInQueue: ClientRequestsStatistics;
   requestsInProgress: ClientRequestsStatistics;
 }
