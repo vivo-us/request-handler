@@ -29,7 +29,7 @@ class RequestLimitClient extends BaseClient {
 
   public handleRateLimitUpdated(data: RateLimitUpdatedData) {
     if (data.rateLimit.type !== "requestLimit") return;
-    this.rateLimit === data.rateLimit;
+    this.rateLimit = data.rateLimit;
     this.tokens > data.rateLimit.maxTokens
       ? data.rateLimit.maxTokens
       : this.tokens;
@@ -108,22 +108,11 @@ class RequestLimitClient extends BaseClient {
       if (isOver) this.tokens = maxTokens;
       else this.tokens += tokensToAdd;
       this.emitter.emit(`${this.redisName}:tokensAdded`, this.tokens);
-      const data: ClientTokensUpdatedData = {
-        clientId: this.id,
-        clientName: this.name,
-        tokens: this.tokens,
-      };
-      await this.redis.publish(
-        `${this.requestHandlerRedisName}:clientTokensUpdated`,
-        JSON.stringify(data)
-      );
+      await this.publishTokensUpdated();
     }
   }
 
-  protected async waitForTurn(cost: number) {
-    if (this.tokens >= cost) return;
-    await this.waitForTokens(cost);
-    this.tokens -= cost;
+  private async publishTokensUpdated() {
     const data: ClientTokensUpdatedData = {
       clientId: this.id,
       clientName: this.name,
@@ -133,6 +122,12 @@ class RequestLimitClient extends BaseClient {
       `${this.requestHandlerRedisName}:clientTokensUpdated`,
       JSON.stringify(data)
     );
+  }
+
+  protected async waitForTurn(cost: number) {
+    await this.waitForTokens(cost);
+    this.tokens -= cost;
+    await this.publishTokensUpdated();
   }
 
   /**
