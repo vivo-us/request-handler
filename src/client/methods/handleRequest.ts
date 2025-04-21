@@ -1,9 +1,9 @@
-import { RequestConfig, RequestRetryData } from "../request/types";
+import { RequestConfig, RequestRetryData } from "../../request/types";
 import { AxiosError, AxiosResponse } from "axios";
 import authenticate from "./authenticate";
-import BaseError from "../baseError";
-import Request from "../request";
-import BaseClient from ".";
+import BaseError from "../../baseError";
+import Request from "../../request";
+import BaseClient from "..";
 
 async function handleRequest(this: BaseClient, config: RequestConfig) {
   const request = new Request(this.name, config, this.requestOptions);

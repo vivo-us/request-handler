@@ -1,6 +1,6 @@
 import { AxiosRequestConfig } from "axios";
 import CryptoJS from "crypto-js";
-import Client from ".";
+import Client from "../";
 import {
   AuthDataBasic,
   AuthDataOAuth2ClientCredentials,
@@ -8,7 +8,7 @@ import {
   AuthDataToken,
   OAuthGrantTypeResponse,
   OAuthResponse,
-} from "./types";
+} from "../types";
 
 /**
  * This method decides how to authenticate a request based on the authData provided

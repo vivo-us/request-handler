@@ -1,4 +1,4 @@
-import BaseClient from ".";
+import BaseClient from "../";
 import { v4 } from "uuid";
 
 /**

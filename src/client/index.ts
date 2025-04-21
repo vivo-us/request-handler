@@ -1,7 +1,7 @@
 import { RequestDoneData, RequestMetadata } from "../request/types";
-import processRequests from "./processRequests";
+import processRequests from "./methods/processRequests";
+import handleRequest from "./methods/handleRequest";
 import axios, { AxiosInstance } from "axios";
-import handleRequest from "./handleRequest";
 import * as ClientTypes from "./types";
 import { Logger } from "winston";
 import IORedis from "ioredis";

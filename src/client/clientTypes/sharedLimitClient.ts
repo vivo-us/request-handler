@@ -1,17 +1,20 @@
-import { RequestDoneData } from "../request/types";
-import BaseClient from ".";
+import { RequestDoneData } from "../../request/types";
+import BaseClient from "..";
 import {
   ClientConstructorData,
   ClientRole,
   ClientTokensUpdatedData,
-  NoLimitClientOptions,
+  SharedLimitClientOptions,
   RateLimitStats,
   RateLimitUpdatedData,
-} from "./types";
+} from "../types";
 
-class NoLimitClient extends BaseClient {
-  protected rateLimit: NoLimitClientOptions;
-  constructor(data: ClientConstructorData, rateLimit: NoLimitClientOptions) {
+class SharedLimitClient extends BaseClient {
+  protected rateLimit: SharedLimitClientOptions;
+  constructor(
+    data: ClientConstructorData,
+    rateLimit: SharedLimitClientOptions
+  ) {
     super(data);
     this.rateLimit = rateLimit;
   }
@@ -21,7 +24,7 @@ class NoLimitClient extends BaseClient {
   }
 
   public handleRateLimitUpdated(data: RateLimitUpdatedData) {
-    if (data.rateLimit.type !== "noLimit") return;
+    if (data.rateLimit.type !== "sharedLimit") return;
     this.rateLimit = data.rateLimit;
   }
 
@@ -58,4 +61,4 @@ class NoLimitClient extends BaseClient {
   }
 }
 
-export default NoLimitClient;
+export default SharedLimitClient;

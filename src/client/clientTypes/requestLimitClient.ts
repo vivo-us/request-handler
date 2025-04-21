@@ -1,12 +1,12 @@
-import { RequestDoneData } from "../request/types";
-import BaseClient from ".";
+import { RequestDoneData } from "../../request/types";
+import BaseClient from "..";
 import {
   ClientConstructorData,
   ClientTokensUpdatedData,
   RateLimitStats,
   RateLimitUpdatedData,
   RequestLimitClientOptions,
-} from "./types";
+} from "../types";
 
 class RequestLimitClient extends BaseClient {
   protected rateLimit: RequestLimitClientOptions;
