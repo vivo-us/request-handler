@@ -1,6 +1,6 @@
 import ConcurrencyLimitClient from "../client/concurrencyLimitClient";
 import RequestLimitClient from "../client/requestLimitClient";
-import SharedLimitClient from "../client/sharedClient";
+import SharedLimitClient from "../client/sharedLimitClient";
 import NoLimitClient from "../client/noLimitClient";
 import { CreateClientData } from "../client/types";
 import BaseError from "../baseError";
