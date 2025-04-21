@@ -2,7 +2,6 @@ import { RequestDoneData } from "../../request/types";
 import BaseClient from "..";
 import {
   ClientConstructorData,
-  ClientTokensUpdatedData,
   ConcurrencyLimitClientOptions,
   RateLimitStats,
   RateLimitUpdatedData,
@@ -16,10 +15,6 @@ class ConcurrencyLimitClient extends BaseClient {
   ) {
     super(data, data.client.name);
     this.rateLimit = rateLimit;
-  }
-
-  public handleTokensUpdated(data: ClientTokensUpdatedData): void {
-    return;
   }
 
   public handleRateLimitUpdated(data: RateLimitUpdatedData) {

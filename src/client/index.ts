@@ -69,9 +69,6 @@ abstract class BaseClient {
     this.key = data.key;
   }
 
-  public abstract handleTokensUpdated(
-    data: ClientTypes.ClientTokensUpdatedData
-  ): void;
   public abstract handleRateLimitUpdated(
     data: ClientTypes.RateLimitUpdatedData
   ): Promise<void> | void;

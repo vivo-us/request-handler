@@ -3,7 +3,6 @@ import BaseClient from "..";
 import {
   ClientConstructorData,
   ClientRole,
-  ClientTokensUpdatedData,
   SharedLimitClientOptions,
   RateLimitStats,
   RateLimitUpdatedData,
@@ -17,10 +16,6 @@ class SharedLimitClient extends BaseClient {
   ) {
     super(data, rateLimit.clientName);
     this.rateLimit = rateLimit;
-  }
-
-  public handleTokensUpdated(data: ClientTokensUpdatedData): void {
-    return;
   }
 
   public handleRateLimitUpdated(data: RateLimitUpdatedData) {

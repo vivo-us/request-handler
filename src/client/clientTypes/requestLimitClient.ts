@@ -30,9 +30,9 @@ class RequestLimitClient extends BaseClient {
   public handleRateLimitUpdated(data: RateLimitUpdatedData) {
     if (data.rateLimit.type !== "requestLimit") return;
     this.rateLimit = data.rateLimit;
-    this.tokens > data.rateLimit.maxTokens
-      ? data.rateLimit.maxTokens
-      : this.tokens;
+    if (this.tokens > data.rateLimit.maxTokens) {
+      this.tokens = data.rateLimit.maxTokens;
+    }
     this.startAddTokensInterval();
   }
 

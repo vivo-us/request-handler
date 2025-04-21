@@ -1,4 +1,5 @@
 import { ClientTokensUpdatedData, RateLimitUpdatedData } from "../client/types";
+import RequestLimitClient from "../client/clientTypes/requestLimitClient";
 import { RequestDoneData, RequestMetadata } from "../request/types";
 import updateClientRoles from "./updateClientRoles";
 import createClients from "./createClients";
@@ -129,7 +130,7 @@ function handleDestroyClient(this: RequestHandler, message: string) {
 function handleClientTokensUpdated(this: RequestHandler, message: string) {
   const data: ClientTokensUpdatedData = JSON.parse(message);
   const client = this.getClient(data.clientName);
-  client.handleTokensUpdated(data);
+  if (client instanceof RequestLimitClient) client.handleTokensUpdated(data);
 }
 
 function handleRequestAdded(this: RequestHandler, message: string) {
