@@ -1,17 +1,12 @@
-import { RequestConfig, RequestRetryData } from "../request/types";
+import { RequestConfig, RequestRetryData } from "../../request/types";
 import { AxiosError, AxiosResponse } from "axios";
 import authenticate from "./authenticate";
-import { RateLimitData } from "./types";
-import BaseError from "../baseError";
-import Request from "../request";
-import Client from ".";
+import BaseError from "../../baseError";
+import Request from "../../request";
+import BaseClient from "..";
 
-async function handleRequest(this: Client, config: RequestConfig) {
-  const request = new Request(
-    this.rateLimit.type === "shared" ? this.rateLimit.clientName : this.name,
-    config,
-    this.requestOptions
-  );
+async function handleRequest(this: BaseClient, config: RequestConfig) {
+  const request = new Request(this.name, config, this.requestOptions);
   this.logger.debug(`Request ID: ${request.id} | Waiting...`);
   do {
     request.setStatus("inQueue");
@@ -34,7 +29,7 @@ async function handleRequest(this: Client, config: RequestConfig) {
   throw new BaseError(this.logger, "No response received for the request.");
 }
 
-async function handlePreRequest(this: Client, request: Request) {
+async function handlePreRequest(this: BaseClient, request: Request) {
   await waitForRequestReady.bind(this)(request);
   if (this.requestOptions.requestInterceptor) {
     request.config = await this.requestOptions.requestInterceptor(
@@ -56,8 +51,7 @@ async function handlePreRequest(this: Client, request: Request) {
   );
 }
 
-function waitForRequestReady(this: Client, request: Request) {
-  if (this.rateLimit.type === "noLimit") return true;
+function waitForRequestReady(this: BaseClient, request: Request) {
   return new Promise(async (resolve) => {
     this.emitter.once(`requestReady:${request.id}`, async () => {
       request.setStatus("inProgress");
@@ -71,7 +65,7 @@ function waitForRequestReady(this: Client, request: Request) {
 }
 
 async function handleResponse(
-  this: Client,
+  this: BaseClient,
   request: Request,
   res: AxiosResponse,
   interval: NodeJS.Timeout
@@ -85,16 +79,7 @@ async function handleResponse(
     await this.requestOptions.responseInterceptor(request.config, res);
   }
   if (this.rateLimitChange) {
-    let rateLimit: RateLimitData;
-    if (this.rateLimit.type === "requestLimit") {
-      rateLimit = {
-        type: "requestLimit",
-        tokensToAdd: this.rateLimit.tokensToAdd,
-        maxTokens: this.rateLimit.maxTokens,
-        interval: this.rateLimit.interval,
-      };
-    } else rateLimit = this.rateLimit;
-    const newLimit = await this.rateLimitChange(rateLimit, res);
+    const newLimit = await this.rateLimitChange(this.rateLimit, res);
     if (newLimit) await this.updateRateLimit(newLimit);
   }
   this.logger.debug(`Request ID: ${request.id} | Status: ${res.status}`);
@@ -102,7 +87,7 @@ async function handleResponse(
 }
 
 async function handleError(
-  this: Client,
+  this: BaseClient,
   request: Request,
   res: AxiosError | any,
   interval: NodeJS.Timeout
@@ -118,7 +103,11 @@ async function handleError(
   throw res;
 }
 
-async function handleRetry(this: Client, request: Request, error: AxiosError) {
+async function handleRetry(
+  this: BaseClient,
+  request: Request,
+  error: AxiosError
+) {
   const { retry429s, retry5xxs, retryStatusCodes } = this.retryOptions;
   const retryableCodes = ["ECONNRESET", "ETIMEDOUT", "ECONNABORTED"];
   const status = error?.response?.status;
@@ -157,20 +146,20 @@ async function handleRetry(this: Client, request: Request, error: AxiosError) {
  * @returns
  */
 
-function handleBackoff(this: Client, request: Request, data: RequestRetryData) {
-  const { retryBackoffBaseTime, retryBackoffMethod } = this.retryOptions;
-  const backoffBase =
-    this.rateLimit.type === "requestLimit"
-      ? this.rateLimit.interval
-      : retryBackoffBaseTime;
-  const power = retryBackoffMethod === "exponential" ? 2 : 1;
+function handleBackoff(
+  this: BaseClient,
+  request: Request,
+  data: RequestRetryData
+) {
+  const backoffBase = this.getRetryBackoffBaseTime();
+  const power = this.retryOptions.retryBackoffMethod === "exponential" ? 2 : 1;
   data.waitTime = Math.pow(request.retries, power) * backoffBase;
   data.message += ` | Will retry...`;
   return data;
 }
 
 function handleLogError(
-  this: Client,
+  this: BaseClient,
   request: Request,
   res: AxiosError | any,
   retryData: RequestRetryData

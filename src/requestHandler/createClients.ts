@@ -1,7 +1,10 @@
+import ConcurrencyLimitClient from "../client/clientTypes/concurrencyLimitClient";
+import RequestLimitClient from "../client/clientTypes/requestLimitClient";
+import SharedLimitClient from "../client/clientTypes/sharedLimitClient";
+import NoLimitClient from "../client/clientTypes/noLimitClient";
 import { CreateClientData } from "../client/types";
 import BaseError from "../baseError";
 import RequestHandler from ".";
-import Client from "../client";
 
 /**
  * This method uses the client generators provided when the RequestHandler was created to create new clients.
@@ -118,16 +121,41 @@ async function createClient(this: RequestHandler, data: CreateClientData) {
       `Client with name ${data.name} already exists.`
     );
   }
-  const client = new Client({
+  const baseData = {
     client: data,
     redis: this.redis,
     requestHandlerRedisName: this.redisName,
     logger: this.logger,
     key: this.key,
     emitter: this.emitter,
-  });
-  this.clients.set(data.name, client);
-  await client.init();
+  };
+  switch (data.rateLimit?.type) {
+    case "requestLimit":
+      const rlClient = new RequestLimitClient(baseData, data.rateLimit);
+      this.clients.set(data.name, rlClient);
+      await rlClient.init();
+      break;
+    case "concurrencyLimit":
+      const clClient = new ConcurrencyLimitClient(baseData, data.rateLimit);
+      this.clients.set(data.name, clClient);
+      await clClient.init();
+      break;
+    case "sharedLimit":
+      const slClient = new SharedLimitClient(baseData, data.rateLimit);
+      this.clients.set(data.name, slClient);
+      await slClient.init();
+      break;
+    case "noLimit":
+      const nlClient = new NoLimitClient(baseData, data.rateLimit);
+      this.clients.set(data.name, nlClient);
+      await nlClient.init();
+      break;
+    default:
+      const undefinedClient = new NoLimitClient(baseData, { type: "noLimit" });
+      this.clients.set(data.name, undefinedClient);
+      await undefinedClient.init();
+      break;
+  }
 }
 
 export default createClients;

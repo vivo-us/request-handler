@@ -1,13 +1,13 @@
 import { RequestDoneData, RequestMetadata } from "../request/types";
-import processRequests from "./processRequests";
+import processRequests from "./methods/processRequests";
+import handleRequest from "./methods/handleRequest";
 import axios, { AxiosInstance } from "axios";
-import handleRequest from "./handleRequest";
 import * as ClientTypes from "./types";
 import { Logger } from "winston";
 import IORedis from "ioredis";
 import { v4 } from "uuid";
 
-export default class Client {
+abstract class BaseClient {
   protected id: string = v4();
   protected name: string;
   protected role: ClientTypes.ClientRole = "worker";
@@ -16,7 +16,7 @@ export default class Client {
   protected redisName: string;
   protected emitter: NodeJS.EventEmitter;
   protected logger: Logger;
-  protected rateLimit: ClientTypes.CreatedRateLimit;
+  protected abstract rateLimit: ClientTypes.RateLimitData;
   protected metadata?: { [key: string]: any };
   protected requestOptions: ClientTypes.RequestOptions;
   protected authData?: ClientTypes.AuthCreateData;
@@ -38,25 +38,17 @@ export default class Client {
   public handleRequest = handleRequest.bind(this);
   protected processRequests = processRequests.bind(this);
 
-  constructor(data: ClientTypes.ClientConstructorData) {
+  constructor(data: ClientTypes.ClientConstructorData, name: string) {
     this.emitter = data.emitter;
     this.http = axios.create(data.client.axiosOptions);
     this.logger = data.logger;
     this.redis = data.redis;
-    this.name = data.client.name;
-    if (!data.client.rateLimit) this.rateLimit = { type: "noLimit" };
-    else if (data.client.rateLimit.type === "requestLimit") {
-      this.rateLimit = {
-        ...data.client.rateLimit,
-        tokens: data.client.rateLimit.maxTokens,
-      };
-    } else this.rateLimit = data.client.rateLimit;
+    this.name = name;
     this.requestHandlerRedisName = data.requestHandlerRedisName;
-    this.redisName = `${data.requestHandlerRedisName}:${(this.rateLimit.type ===
-    "shared"
-      ? this.rateLimit.clientName
-      : data.client.name
-    ).replaceAll(/ /g, "_")}`;
+    this.redisName = `${data.requestHandlerRedisName}:${this.name.replaceAll(
+      / /g,
+      "_"
+    )}`;
     this.healthCheckIntervalMs = data.client.healthCheckIntervalMs || 10000;
     this.metadata = data.client.metadata;
     this.requestOptions = data.client.requestOptions || {};
@@ -77,13 +69,28 @@ export default class Client {
     this.key = data.key;
   }
 
+  public abstract handleTokensUpdated(
+    data: ClientTypes.ClientTokensUpdatedData
+  ): void;
+  public abstract handleRateLimitUpdated(
+    data: ClientTypes.RateLimitUpdatedData
+  ): Promise<void> | void;
+  protected abstract getRateLimitStats(): ClientTypes.RateLimitStats;
+  protected abstract handleUpdateRole(role: ClientTypes.ClientRole): void;
+  protected abstract handleHealthCheck(): void;
+  protected abstract handleOwnTypeRequestDone(data: RequestDoneData): void;
+  protected abstract handleFreezeOwnTypeRequests(): void;
+  protected abstract getRetryBackoffBaseTime(): number;
+  protected abstract waitForTurn(cost: number): Promise<void> | void;
+  protected abstract handleDestroy(): void;
+
   /**
    * This method initializes the client by updating the rate limit and subscribing to channels in Redis.
    */
 
   public async init() {
-    if (this.rateLimit.type === "shared") return;
     await this.updateRateLimit(this.rateLimit);
+    this.startHealthCheckInterval();
   }
 
   /**
@@ -103,14 +110,31 @@ export default class Client {
     );
   }
 
+  private startHealthCheckInterval() {
+    if (this.healthCheckInterval) return;
+    this.healthCheckInterval = setInterval(() => {
+      for (const key of this.requests.keys()) {
+        if (this.requestsHeartbeat.has(key)) continue;
+        this.requests.delete(key);
+      }
+      this.handleHealthCheck();
+    }, this.healthCheckIntervalMs);
+  }
+
   /**
    * This method destroys the client by removing all keys associated with the client from Redis and clearing the interval for adding tokens to the client's bucket.
    */
 
   public destroy() {
-    this.removeAddTokensInterval();
+    this.handleDestroy();
     this.removeHealthCheckInterval();
     this.logger.info(`Client ${this.name} | Destroyed`);
+  }
+
+  private removeHealthCheckInterval() {
+    if (!this.healthCheckInterval) return;
+    clearInterval(this.healthCheckInterval);
+    this.healthCheckInterval = undefined;
   }
 
   public getName() {
@@ -142,116 +166,8 @@ export default class Client {
   public updateRole(role: ClientTypes.ClientRole) {
     if (role === this.role) return;
     this.role = role;
-    this.startHealthCheckInterval();
-    this.startAddTokensInterval();
+    this.handleUpdateRole(role);
     this.processRequests();
-  }
-
-  private startHealthCheckInterval(this: Client) {
-    if (this.healthCheckInterval) return;
-    this.healthCheckInterval = setInterval(() => {
-      for (const key of this.requests.keys()) {
-        if (this.requestsHeartbeat.has(key)) continue;
-        this.requests.delete(key);
-      }
-      if (
-        this.rateLimit.type === "requestLimit" &&
-        !this.rateLimit.addTokensInterval
-      ) {
-        this.startAddTokensInterval();
-      }
-    }, this.healthCheckIntervalMs);
-  }
-
-  private removeAddTokensInterval() {
-    if (this.rateLimit.type !== "requestLimit") return;
-    if (!this.rateLimit.addTokensInterval) return;
-    clearInterval(this.rateLimit.addTokensInterval);
-    this.rateLimit.addTokensInterval = undefined;
-  }
-
-  /**
-   * Adds an interval to the Client so that tokens will be added to the Client's bucket as specified by the rate limit.
-   */
-
-  private startAddTokensInterval() {
-    if (this.role === "worker" || this.rateLimit.type !== "requestLimit") {
-      return;
-    }
-    this.removeAddTokensInterval();
-    this.rateLimit.addTokensInterval = setInterval(
-      () => this.addTokens(),
-      this.rateLimit.interval
-    );
-  }
-
-  private removeHealthCheckInterval() {
-    if (!this.healthCheckInterval) return;
-    clearInterval(this.healthCheckInterval);
-    this.healthCheckInterval = undefined;
-  }
-
-  /**
-   * Adds tokens to the client's bucket as specified by the rate limit.
-   *
-   * This method only runs if the rate limit is a requestLimit type and the client is not frozen.
-   *
-   * If there are less than 0 tokens in the client's bucket, the method will set the number of tokens to 0.
-   *
-   * If there are more tokens in the client's bucket than the max allowed, the method will set the number of tokens to the max allowed.
-   *
-   * If the client's bucket is full, the method will not add any tokens.
-   *
-   * If the client's bucket is not full, the method will add tokens to the client's bucket and emit a tokensAdded event.
-   *
-   * @param cost The cost of the request. If the cost is not provided, the method will add 1 token to the client's bucket.
-   *
-   */
-
-  private async addTokens() {
-    if (this.rateLimit.type !== "requestLimit") return;
-    const { maxTokens, tokensToAdd, tokens } = this.rateLimit;
-    if (tokens === maxTokens || this.freezeTimeout) return;
-    else if (tokens < 0) this.rateLimit.tokens = 0;
-    else if (tokens > maxTokens) this.rateLimit.tokens = maxTokens;
-    else {
-      const isOver = tokensToAdd + tokens > maxTokens;
-      if (isOver) this.rateLimit.tokens = maxTokens;
-      else this.rateLimit.tokens += tokensToAdd;
-      this.emitter.emit(`${this.redisName}:tokensAdded`, this.rateLimit.tokens);
-      await this.redis.publish(
-        `${this.requestHandlerRedisName}:clientTokensUpdated`,
-        JSON.stringify({ clientName: this.name, tokens: this.rateLimit.tokens })
-      );
-    }
-  }
-
-  public async handleTokensUpdated(data: ClientTypes.ClientTokensUpdatedData) {
-    if (this.rateLimit.type !== "requestLimit" || this.id === data.clientId) {
-      return;
-    }
-    this.rateLimit.tokens = data.tokens;
-  }
-
-  public handleRateLimitUpdated(data: ClientTypes.RateLimitUpdatedData) {
-    if (data.rateLimit.type === "requestLimit") {
-      if (this.rateLimit.type !== "requestLimit") {
-        this.rateLimit = {
-          ...data.rateLimit,
-          tokens: data.rateLimit.maxTokens,
-        };
-      } else {
-        this.rateLimit = {
-          ...data.rateLimit,
-          tokens:
-            this.rateLimit.tokens > data.rateLimit.maxTokens
-              ? data.rateLimit.maxTokens
-              : this.rateLimit.tokens,
-        };
-      }
-    } else this.rateLimit = data.rateLimit;
-    if (this.role === "worker") return;
-    this.startAddTokensInterval();
   }
 
   public handleRequestAdded(request: RequestMetadata) {
@@ -261,7 +177,6 @@ export default class Client {
       setTimeout(() => this.handleRequestDied(request.requestId), 3000)
     );
     this.hasUnsortedRequests = true;
-    if (this.role === "worker") return;
     this.processRequests();
   }
 
@@ -294,9 +209,7 @@ export default class Client {
     }
     if (this.role === "worker") return;
     if (data.waitTime) this.handleFreezeRequests(data);
-    if (this.rateLimit.type === "concurrencyLimit") {
-      this.emitter.emit(`${this.redisName}:requestDone`);
-    }
+    this.handleOwnTypeRequestDone(data);
     if (data.requestId !== this.thawRequestId) return;
     if (data.responseStatus === "success") this.thawRequestCount--;
     this.thawRequestId = undefined;
@@ -305,7 +218,7 @@ export default class Client {
 
   private handleFreezeRequests(data: RequestDoneData) {
     this.logger.debug(`Freezing requests for ${data.waitTime}ms...`);
-    if (this.rateLimit.type === "requestLimit") this.rateLimit.tokens = 0;
+    this.handleFreezeOwnTypeRequests();
     if (this.freezeTimeout) clearTimeout(this.freezeTimeout);
     if (data.isRateLimited) {
       this.thawRequestCount = this.retryOptions.thawRequestCount;
@@ -317,22 +230,12 @@ export default class Client {
   }
 
   public getStats(): ClientTypes.ClientStatistics {
-    let rateLimit: ClientTypes.CreatedRateLimit;
-    if (this.rateLimit.type === "requestLimit") {
-      rateLimit = {
-        type: "requestLimit",
-        tokens: this.rateLimit.tokens,
-        maxTokens: this.rateLimit.maxTokens,
-        interval: this.rateLimit.interval,
-        tokensToAdd: this.rateLimit.tokensToAdd,
-      };
-    } else rateLimit = this.rateLimit;
     const stats: ClientTypes.ClientStatistics = {
       clientName: this.name,
       isFrozen: this.freezeTimeout !== undefined,
       isThawing: this.thawRequestId !== undefined,
       thawRequestCount: this.thawRequestCount,
-      rateLimit,
+      rateLimit: this.getRateLimitStats(),
       requestsInQueue: { count: 0, cost: 0, requests: [] },
       requestsInProgress: { count: 0, cost: 0, requests: [] },
     };
@@ -350,3 +253,5 @@ export default class Client {
     return stats;
   }
 }
+
+export default BaseClient;
