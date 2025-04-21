@@ -1,5 +1,6 @@
 import { RequestConfig, RequestRetryData } from "../request/types";
 import { AxiosError, AxiosResponse } from "axios";
+import authenticate from "./authenticate";
 import BaseError from "../baseError";
 import Request from "../request";
 import BaseClient from ".";
@@ -35,8 +36,8 @@ async function handlePreRequest(this: BaseClient, request: Request) {
       request.config
     );
   }
-  if (this.authenticator) {
-    const authHeader = await this.authenticator.authenticate(request.config);
+  const authHeader = await authenticate.bind(this)();
+  if (authHeader) {
     request.config = {
       ...request.config,
       headers: { ...request.config.headers, ...authHeader },

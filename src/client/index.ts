@@ -1,5 +1,4 @@
 import { RequestDoneData, RequestMetadata } from "../request/types";
-import { Authenticator } from "../authenticator";
 import processRequests from "./processRequests";
 import axios, { AxiosInstance } from "axios";
 import handleRequest from "./handleRequest";
@@ -20,7 +19,8 @@ abstract class BaseClient {
   protected abstract rateLimit: ClientTypes.RateLimitData;
   protected metadata?: { [key: string]: any };
   protected requestOptions: ClientTypes.RequestOptions;
-  protected authenticator?: Authenticator;
+  protected authData?: ClientTypes.AuthCreateData;
+  protected key: string;
   protected retryOptions: ClientTypes.RetryOptions;
   protected rateLimitChange?: ClientTypes.RateLimitChange;
   protected requestHandlerRedisName: string;
@@ -69,13 +69,8 @@ abstract class BaseClient {
       thawRequestCount: retryOptions?.thawRequestCount || 3,
       retryHandler: retryOptions?.retryHandler,
     };
-    if (!data.client.authentication) return;
-    this.authenticator = new Authenticator(
-      data.client.authentication,
-      this.redis,
-      this.redisName,
-      data.key
-    );
+    this.authData = data.client.authentication;
+    this.key = data.key;
   }
 
   public abstract handleTokensUpdated(
