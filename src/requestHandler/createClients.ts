@@ -1,5 +1,6 @@
 import ConcurrencyLimitClient from "../client/concurrencyLimitClient";
 import RequestLimitClient from "../client/requestLimitClient";
+import SharedLimitClient from "../client/sharedClient";
 import NoLimitClient from "../client/noLimitClient";
 import { CreateClientData } from "../client/types";
 import BaseError from "../baseError";
@@ -139,7 +140,12 @@ async function createClient(this: RequestHandler, data: CreateClientData) {
       this.clients.set(data.name, clClient);
       await clClient.init();
       break;
-    case "noLimit":
+    case "sharedLimit":
+      const slClient = new SharedLimitClient(baseData, data.rateLimit);
+      this.clients.set(data.name, slClient);
+      await slClient.init();
+      break;
+    default:
       const nlClient = new NoLimitClient(baseData, data.rateLimit);
       this.clients.set(data.name, nlClient);
       await nlClient.init();

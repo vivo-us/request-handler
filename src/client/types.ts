@@ -74,7 +74,7 @@ export type RateLimitData =
   | RequestLimitClientOptions
   | ConcurrencyLimitClientOptions
   | NoLimitClientOptions
-  | SharedLimitClient;
+  | SharedLimitClientOptions;
 
 export interface NoLimitClientOptions {
   type: "noLimit";
@@ -96,8 +96,8 @@ export interface ConcurrencyLimitClientOptions {
   maxConcurrency: number;
 }
 
-export interface SharedLimitClient {
-  type: "shared";
+export interface SharedLimitClientOptions {
+  type: "sharedLimit";
   /** The name of the client to share a rate limit with */
   clientName: string;
 }
@@ -106,7 +106,7 @@ export type RateLimitStats =
   | RequestLimitClientStats
   | ConcurrencyLimitClientOptions
   | NoLimitClientOptions
-  | SharedLimitClient;
+  | SharedLimitClientOptions;
 
 export interface RequestLimitClientStats extends RequestLimitClientOptions {
   /** The number of tokens currently in the client's bucket */

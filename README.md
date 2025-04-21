@@ -22,7 +22,7 @@ Request Handler is a multi-instance capable external API management package that
         - [Sliding Window](#sliding-window)
       - [concurrencyLimit](#concurrencylimit)
       - [noLimit](#nolimit)
-      - [shared](#shared)
+      - [sharedLimit](#sharedlimit)
     - [Request Options](#request-options)
     - [Authentication Options](#authentication-options)
       - [OAuth2 Client Credentials](#oauth2-client-credentials)
@@ -243,9 +243,11 @@ const clientGenerator = () => {
 }
 ```
 
-#### shared
+#### sharedLimit
 
-Shared clients allow one client to add its requests to another client's rate limit. This is useful for some OAuth scenarios where multiple authentication configurations are needed, but the rate limit is shared.
+Shared limit clients allow one client to add its requests to another client's rate limit. This is useful for some OAuth scenarios where multiple authentication configurations are needed, but the rate limit is shared.
+
+NOTE: A shared limit client will never be a `controller`, as it relies on another client's rate limit.
 
 Additional properties:
 
@@ -257,7 +259,7 @@ const clientGenerator = () => {
       {
         name: "test",
         rateLimit: {
-          type: "shared",
+          type: "sharedLimit",
           clientName: "otherClient"
         }
       }

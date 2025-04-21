@@ -44,15 +44,14 @@ abstract class BaseClient {
     this.logger = data.logger;
     this.redis = data.redis;
     this.name =
-      data.client.rateLimit.type === "shared"
+      data.client.rateLimit.type === "sharedLimit"
         ? data.client.rateLimit.clientName
         : data.client.name;
     this.requestHandlerRedisName = data.requestHandlerRedisName;
-    this.redisName = `${data.requestHandlerRedisName}:${(data.client.rateLimit
-      .type === "shared"
-      ? data.client.rateLimit.clientName
-      : data.client.name
-    ).replaceAll(/ /g, "_")}`;
+    this.redisName = `${data.requestHandlerRedisName}:${this.name.replaceAll(
+      / /g,
+      "_"
+    )}`;
     this.healthCheckIntervalMs = data.client.healthCheckIntervalMs || 10000;
     this.metadata = data.client.metadata;
     this.requestOptions = data.client.requestOptions || {};
@@ -93,7 +92,6 @@ abstract class BaseClient {
    */
 
   public async init() {
-    if (this.rateLimit.type === "shared") return;
     await this.updateRateLimit(this.rateLimit);
   }
 
@@ -151,6 +149,7 @@ abstract class BaseClient {
    */
 
   public updateRole(role: ClientTypes.ClientRole) {
+    if (this.rateLimit.type === "sharedLimit") role = "worker";
     if (role === this.role) return;
     this.role = role;
     this.startHealthCheckInterval();
@@ -182,7 +181,6 @@ abstract class BaseClient {
       setTimeout(() => this.handleRequestDied(request.requestId), 3000)
     );
     this.hasUnsortedRequests = true;
-    if (this.role === "worker") return;
     this.processRequests();
   }
 
