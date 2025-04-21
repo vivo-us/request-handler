@@ -49,8 +49,8 @@ class RequestLimitClient extends BaseClient {
    */
 
   private startAddTokensInterval() {
-    if (this.role === "worker") return;
     this.removeAddTokensInterval();
+    if (this.role === "worker") return;
     this.addTokensInterval = setInterval(
       () => this.addTokens(),
       this.rateLimit.interval
