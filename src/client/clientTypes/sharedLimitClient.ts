@@ -15,7 +15,7 @@ class SharedLimitClient extends BaseClient {
     data: ClientConstructorData,
     rateLimit: SharedLimitClientOptions
   ) {
-    super(data);
+    super(data, rateLimit.clientName);
     this.rateLimit = rateLimit;
   }
 

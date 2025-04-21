@@ -14,7 +14,7 @@ class ConcurrencyLimitClient extends BaseClient {
     data: ClientConstructorData,
     rateLimit: ConcurrencyLimitClientOptions
   ) {
-    super(data);
+    super(data, data.client.name);
     this.rateLimit = rateLimit;
   }
 

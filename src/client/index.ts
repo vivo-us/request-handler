@@ -38,15 +38,12 @@ abstract class BaseClient {
   public handleRequest = handleRequest.bind(this);
   protected processRequests = processRequests.bind(this);
 
-  constructor(data: ClientTypes.ClientConstructorData) {
+  constructor(data: ClientTypes.ClientConstructorData, name: string) {
     this.emitter = data.emitter;
     this.http = axios.create(data.client.axiosOptions);
     this.logger = data.logger;
     this.redis = data.redis;
-    this.name =
-      data.client.rateLimit.type === "sharedLimit"
-        ? data.client.rateLimit.clientName
-        : data.client.name;
+    this.name = name;
     this.requestHandlerRedisName = data.requestHandlerRedisName;
     this.redisName = `${data.requestHandlerRedisName}:${this.name.replaceAll(
       / /g,
@@ -149,7 +146,6 @@ abstract class BaseClient {
    */
 
   public updateRole(role: ClientTypes.ClientRole) {
-    if (this.rateLimit.type === "sharedLimit") role = "worker";
     if (role === this.role) return;
     this.role = role;
     this.startHealthCheckInterval();

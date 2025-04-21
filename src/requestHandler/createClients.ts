@@ -129,7 +129,7 @@ async function createClient(this: RequestHandler, data: CreateClientData) {
     key: this.key,
     emitter: this.emitter,
   };
-  switch (data.rateLimit.type) {
+  switch (data.rateLimit?.type) {
     case "requestLimit":
       const rlClient = new RequestLimitClient(baseData, data.rateLimit);
       this.clients.set(data.name, rlClient);
@@ -145,10 +145,15 @@ async function createClient(this: RequestHandler, data: CreateClientData) {
       this.clients.set(data.name, slClient);
       await slClient.init();
       break;
-    default:
+    case "noLimit":
       const nlClient = new NoLimitClient(baseData, data.rateLimit);
       this.clients.set(data.name, nlClient);
       await nlClient.init();
+      break;
+    default:
+      const undefinedClient = new NoLimitClient(baseData, { type: "noLimit" });
+      this.clients.set(data.name, undefinedClient);
+      await undefinedClient.init();
       break;
   }
 }

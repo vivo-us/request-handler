@@ -17,7 +17,7 @@ class RequestLimitClient extends BaseClient {
     data: ClientConstructorData,
     rateLimit: RequestLimitClientOptions
   ) {
-    super(data);
+    super(data, data.client.name);
     this.rateLimit = rateLimit;
     this.tokens = rateLimit.maxTokens;
   }

@@ -12,7 +12,7 @@ import {
 class NoLimitClient extends BaseClient {
   protected rateLimit: NoLimitClientOptions;
   constructor(data: ClientConstructorData, rateLimit: NoLimitClientOptions) {
-    super(data);
+    super(data, data.client.name);
     this.rateLimit = rateLimit;
   }
 

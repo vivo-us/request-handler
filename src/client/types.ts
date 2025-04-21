@@ -29,8 +29,10 @@ export interface CreateClientData {
   name: string;
   /**
    * The Rate Limit info for the Client
+   *
+   * **Default: `noLimit`**
    */
-  rateLimit: RateLimitData;
+  rateLimit?: RateLimitData;
   /**
    * A function to take the old rate limit and the response of a request and see if the rate limit should change
    *

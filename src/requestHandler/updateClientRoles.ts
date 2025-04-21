@@ -11,7 +11,9 @@ async function updateClientRoles(this: RequestHandler, isStartup = false) {
   const clientsBefore = await getClientsBefore.bind(this)();
   let hasChanges = false;
   for (const [name, client] of this.clients) {
-    const newRole = clientsBefore.has(name) ? "worker" : "controller";
+    const rateLimit = client.getRateLimit();
+    const worker = clientsBefore.has(name) || rateLimit.type === "sharedLimit";
+    const newRole = worker ? "worker" : "controller";
     if (client.getRole() === newRole) continue;
     client.updateRole(newRole);
     hasChanges = true;
