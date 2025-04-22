@@ -322,6 +322,10 @@ export interface OAuthRefreshConfig {
    * Whether or not to send the clientId and clientSecret as a Base64 encoded string in Basic auth header
    */
   useBasicAuth?: boolean;
+  /** Used to update the refresh config if there is any dynamic data that changes between each refresh request*/
+  requestInterceptor?: (
+    config: OAuthRefreshConfig
+  ) => Promise<OAuthRefreshConfig> | OAuthRefreshConfig;
   /** If the provided URL does not return data in a normal OAuth standard response, use the responseInterceptor to format it into an acceptable format */
   responseInterceptor?: (
     res: AxiosResponse
