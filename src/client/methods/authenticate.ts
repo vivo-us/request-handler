@@ -96,6 +96,11 @@ async function handleRefreshMethod(
   this: Client,
   authData: AuthDataOAuth2ClientCredentials | AuthDataOAuth2GrantType
 ) {
+  if (authData.refreshConfig.requestInterceptor) {
+    authData.refreshConfig = await authData.refreshConfig.requestInterceptor(
+      authData.refreshConfig
+    );
+  }
   const config = generateConfig(authData);
   const res = await this.http(config);
   let oAuthResponse: OAuthResponse | OAuthGrantTypeResponse;
